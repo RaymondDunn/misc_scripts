@@ -1,0 +1,41 @@
+//Parameters
+long width = mmc.getImageWidth();
+long height = mmc.getImageHeight();
+long depth = mmc.getBytesPerPixel();
+bitdepth = mmc.getImageBitDepth();
+
+//acqName = "testAcq";
+//acqName = "Acq_Scr13_7.6fps";
+acqName = "Acq_zbtb16a13_7.6fps";
+
+Zstart =-20;
+Zend = 61;
+Zstep = 5;
+nFrames = 30;
+nZ = 1 + (Zend - Zstart) / Zstep;
+
+//Initialize Acquisition
+gui.closeAllAcquisitions();
+//gui.openAcquisition(acqName, "E:/20170420/Roland/AcquisitionData", nFrames, 1, nZ, 1, true, true);
+gui.openAcquisition(acqName, "H:/WuR_2017-05-05_flk_fs_zbtb16a_2dpf/AcquisitionData", nFrames, 1, nZ, 1, true, true);
+gui.initializeAcquisition(acqName, (int) width, (int) height, (int) depth, (int)bitdepth);
+
+Zcount=0;
+for (Z = Zstart; Z <= Zend; Z=Z+Zstep) {
+	Z;
+	mmc.setPosition("ZStage", Z);
+	mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+	mmc.startSequenceAcquisition(nFrames, 0, false);
+	//Acquisition starts about 268 msec after stage movement
+   //value = System.currentTimeMillis() - value;
+	//gui.message("Stage start to camera start (ms): " + value);
+	frame=0;
+	while (mmc.isSequenceRunning() || mmc.getRemainingImageCount() > 0) {
+		if (mmc.getRemainingImageCount() > 0) {
+				img = mmc.popNextTaggedImage();
+				gui.addImageToAcquisition(acqName, frame, 0, Zcount, 0, img);
+				frame++;				
+			} 
+		}
+		Zcount++;
+}

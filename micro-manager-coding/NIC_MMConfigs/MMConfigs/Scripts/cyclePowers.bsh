@@ -1,0 +1,10 @@
+if (mmc.isGroupDefined("405nm Laser")){
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 405nm-1", 30);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 405nm-1", 25);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 488nm-2", 30);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 488nm-2", 25);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 561nm-3", 30);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 561nm-3", 25);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 640nm-4", 30);
+	mmc.setProperty("LMM5-Hub", "Transmission (%) 640nm-4", 25);
+}

@@ -1,0 +1,103 @@
+Runnable moveStage = new Runnable() {
+        public void run() {
+				//gui.message("Moving to X " + stopX + " Y " + startY);
+            mmc.setXYPosition(stageName, stopX, startY);
+        };
+};
+
+acqName="cortex_noPFS";
+long width = mmc.getImageWidth();
+long height = mmc.getImageHeight();
+long depth = mmc.getBytesPerPixel();
+
+String stageName = mmc.getXYStageDevice();
+
+//Bounding Box to Acquire
+//double leftX = -16000;
+//double rightX = -36000;
+//double bottomY = 9800;
+//double topY = -2000;
+
+positionList = gui.getPositionList();
+double leftX = positionList.getPosition(0).getX();
+double rightX = positionList.getPosition(0).getX();
+double bottomY = positionList.getPosition(0).getY();
+double topY = positionList.getPosition(0).getY();
+
+for (int pos = 1; pos < positionList.getNumberOfPositions(); pos++){
+	leftX = Math.max(leftX, positionList.getPosition(pos).getX());
+	rightX = Math.min(rightX, positionList.getPosition(pos).getX());
+	bottomY = Math.max(bottomY, positionList.getPosition(pos).getY());
+	topY = Math.min(topY, positionList.getPosition(pos).getY());
+}
+
+
+//How many images per strip do we need?
+double xDistance = Math.abs(leftX - rightX);
+xDistance = xDistance / 1000; //to convert to mm -  units are um
+double cameraXFieldOfView = mmc.getPixelSizeUm() * width / 1000; //also mm
+double cameraYFieldOfView = mmc.getPixelSizeUm() * height / 1000;
+double fieldOverlap = 0.2; //fraction by which each field should overlap
+double effectiveXFieldOfView = cameraXFieldOfView * (1 - fieldOverlap);
+double effectiveYFieldOfView = cameraYFieldOfView * (1 - fieldOverlap);
+int imagesPerStrip = Math.ceil(xDistance / effectiveXFieldOfView);
+gui.message("Images per strip: " + imagesPerStrip);
+
+double yStepSize = effectiveYFieldOfView * 1000; //in microns
+int nStripsToAcquire = Math.ceil(Math.abs(bottomY-topY) / yStepSize);
+gui.message("Will acquire " + nStripsToAcquire + " strips.");
+
+//What interval between exposures do we need? 
+//Want to travel effectiveFieldofView between each image
+double stageVelocity = Double.parseDouble(mmc.getProperty("XYStage", "Speed-S")); //mm/sec
+//set exposureInterval by number of fields per strip and expected transit time
+double msecPerStrip = (xDistance / stageVelocity) * 1000;
+double exposureInterval = msecPerStrip / imagesPerStrip;
+//double exposureInterval = (effectiveXFieldOfView / stageVelocity ) * 1000; //in msec
+gui.message("Exposure interval: " + exposureInterval);
+mmc.setExposure(exposureInterval);
+
+//initial conditions
+double startX = leftX;
+double stopX = rightX;
+double startY = Math.min(bottomY, topY);
+
+//Initialize Acquisition
+gui.closeAllAcquisitions();
+gui.openAcquisition(acqName, "D:/AcquisitionData", imagesPerStrip * nStripsToAcquire, 1, 1, 1, true, true);
+gui.initializeAcquisition(acqName, (int) width, (int) height, (int) depth);
+
+mmc.setXYPosition(stageName, startX, startY);
+mmc.waitForSystem();
+
+int counter = 0;
+for (int strip = 0; strip < nStripsToAcquire; strip++){
+	//Start stage moving
+	Thread myThread = new Thread(moveStage);
+	myThread.start();
+
+	mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+	mmc.startSequenceAcquisition(imagesPerStrip, 0, false);
+
+		while (mmc.isSequenceRunning() || mmc.getRemainingImageCount() > 0) {
+		   if (mmc.getRemainingImageCount() > 0) {
+				img = mmc.popNextImage();
+			   gui.addImage(acqName, img, counter, 0, 0);
+				counter++;
+			} 
+		}
+
+	//Wait for stage thread to finish
+	myThread.join();	
+
+	//Update Y coordinate and move there
+	startY = startY + yStepSize;
+	mmc.setXYPosition(stageName, stopX, startY);
+	mmc.waitForSystem();
+	//Acquire images by zig-zagging. Can't test equality, so just see which we're closest to.
+	if ((stopX - leftX)/(rightX - leftX) < 0.5) {
+		stopX = rightX;
+	} else{
+		stopX = leftX;
+	}
+}

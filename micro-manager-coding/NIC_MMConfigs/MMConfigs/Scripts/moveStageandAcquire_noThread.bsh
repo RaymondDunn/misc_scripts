@@ -1,0 +1,48 @@
+int nImages = 30;
+int intervalMs = 100;
+acqName="test";
+long width = mmc.getImageWidth();
+long height = mmc.getImageHeight();
+long depth = mmc.getBytesPerPixel();
+gui.closeAllAcquisitions();
+gui.openAcquisition(acqName, "D:/AcquisitionData", nImages*4, 1, 1, true);
+gui.initializeAcquisition(acqName, (int) width, (int) height, (int) depth);
+
+String stageName = mmc.getXYStageDevice();
+double leftX = -16000;
+double rightX = -36000;
+double bottomY = 9800;
+double topY = -2000;
+double yStepSize = 1000;
+
+//initial conditions
+double startX = leftX;
+double stopX = rightX;
+double startY = 0;
+mmc.setXYPosition(stageName, startX, startY);
+mmc.waitForSystem();
+
+for (int slice=0; slice <3; slice++){
+	gui.message("starting acquisition");
+//	mmc.prepareSequenceAcquisition(mmc.getCameraDevice());
+	mmc.startSequenceAcquisition(nImages, 0, false);
+   mmc.setXYPosition(stageName, stopX, startY);
+
+	int counter = 0;
+		while (mmc.isSequenceRunning()) {
+		   if (mmc.getRemainingImageCount() > 0) {
+				img = mmc.popNextImage();
+			   gui.addImage(acqName, img, counter, 0, 0);
+				counter++;
+			} 
+		}
+
+	if (stopX == leftX){
+		stopX == rightX;
+	} 
+	else{
+		stopX == leftX;
+	}
+	startY = startY + yStepSize;
+	mmc.stopSequenceAcquisition();
+}

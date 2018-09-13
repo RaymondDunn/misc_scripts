@@ -1,0 +1,24 @@
+//psuedo code for the loop through position
+//for (position = 1; position<5; position++) {
+
+//set up blue LED
+mmc.setProperty("ScopeLED", "ActivePresetMode", 6);
+mmc.setProperty("ScopeLED", "State", 0); //turn off LED
+
+//start the system time
+startTime = System.currentTimeMillis();
+
+//start acquisition
+acq.acquire();
+
+//onTime: 1000ms = 1s; 60s = 1min; 1000x60x3 = 180000ms
+onTime = 180000;
+//onTime = 180000;
+
+//turn on the blue LED for 3min and then turn it off
+mmc.setProperty("ScopeLED", "State", 1); //turn on LED
+gui.sleep(onTime);
+mmc.setProperty("ScopeLED", "State", 0); //turn off LED
+
+//close loop for looping through positions
+//}

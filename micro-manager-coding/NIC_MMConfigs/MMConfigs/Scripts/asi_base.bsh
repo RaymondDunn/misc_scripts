@@ -1,0 +1,10 @@
+//Function to send arbitrary commands to ASI Stage
+String sendASICommand(String command){
+	mmc.setSerialPortCommand("COM4", command, "\r");
+	String asiReturn = mmc.getSerialPortAnswer("COM4", "\n");
+	asiReturn = asiReturn.replaceAll("\r", "\r\n"); //reformat multiline responses for display
+	return asiReturn;
+}
+
+ans = sendASICommand("BU X");
+gui.message(ans);

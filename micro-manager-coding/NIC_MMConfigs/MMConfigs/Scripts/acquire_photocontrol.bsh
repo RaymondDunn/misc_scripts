@@ -1,0 +1,27 @@
+//set up blue LED
+mmc.setProperty("ScopeLED", "ActivePresetMode", 6);
+//mmc.setProperty("ScopeLED", "State", 0); //turn off LED
+
+//start the system time
+startTime = System.currentTimeMillis();
+
+//start acquisition
+acq.acquire();
+
+//onTime: 1000ms = 1s; 60s = 1min; 1000x60x3 = 180000ms
+onTime = 180000;
+//onTime = 180000;
+
+//turn on the blue LED for 3min and then turn it off
+mmc.setProperty("ScopeLED", "State", 1); //turn on LED
+gui.sleep(onTime);
+mmc.setProperty("ScopeLED", "State", 0); //turn off LED
+
+
+
+
+
+//gui.sleep(offTime);
+//gui.message(String.valueOf(System.currentTimeMillis() - startTime));
+//for (timept = 1; timept< 1800000; timept++){
+//}

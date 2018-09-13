@@ -1,0 +1,469 @@
+//******************************************************************************
+/*                            Performance Script (tested with MM v1.4.16)
+*
+* This script measures the performance parameters of a fluorescence microscope.
+* It returns the detection threshold, saturation, linear range of detection and 
+* intensity calibration. These parameters can be used to benchmark a microscope.
+*
+* authors:
+*          Elianna Bier - Augsburg College (Minneapolis, MN)
+*	   Heather Moosher  
+*	   Michael Halter - NIST (Gaithersburg, MD)
+*
+* contact: 
+*	   Michael Halter, Ph.D.
+*	   N.I.S.T.
+*	   100 Bureau Drive, Stop 8313
+*	   Gaithersburg, MD 20899-8313
+*	   Phone: 301-975-4195 | Fax: 301-975-8246
+* 	   michael.halter@nist.gov
+*
+*/
+//******************************************************************************
+
+import ij.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.measure.*;
+import ij.text.*;
+import ij.measure.CurveFitter.*;
+import org.jfree.data.xy.XYSeries;
+import ij.plugin.PlugIn;
+import java.awt.*;
+
+//Closes all ImageJ windows and micromanager acquisitions
+gui.closeAllAcquisitions();
+ij.WindowManager.closeAllWindows();
+
+//Main menu dialog
+GenericDialog options = new GenericDialog("Options");
+options.addMessage("Data Display",new Font("SansSerif", Font.BOLD, 15));
+options.addCheckbox("Display results table with all data taken?",true);
+options.addMessage("___________________________________________________",
+	new Font("SansSerif", Font.PLAIN, 15));
+options.addMessage("Spatial Calibration",new Font("SansSerif", Font.BOLD, 15));
+options.addMessage("Input the spatial dimensions");
+//The second input in the numericField is the default number
+//feel free to change it to the spatial dimensions of your microscope
+options.addNumericField("",.645,3,12,"um/pixel");
+options.addCheckbox("Calculate the spatial dimensions using a reference material",
+	false);
+options.showDialog();
+
+if(options.wasCanceled()){
+	return;}
+
+showData = options.getNextBoolean();
+double Spatial_Calib = Math.pow(1/options.getNextNumber(), 2);
+Need_Spatial_Calib = options.getNextBoolean();
+
+//******************************************************************************
+//                            Spatial Calibration
+//******************************************************************************
+
+if (Need_Spatial_Calib == true) {
+	
+	gui.snapSingleImage(); //Takes a picture
+	new WaitForUserDialog("Spatial Calibration","Place spatial calibration material"+
+		" on stage and focus").show();
+
+	mmc.setExposure(20.0);  //Set exposure
+	gui.snapSingleImage(); 
+	
+	IJ.setTool("line");
+	new WaitForUserDialog("Spatial Calibration","Draw a line between two calibration"+
+		" points then click OK").show();
+
+	ImagePlus imp = WindowManager.getCurrentImage();
+	Roi roi = imp.getRoi();
+	length  = roi.getLength();
+
+	GenericDialog dlg2 = new GenericDialog("Distance Calibration");
+	dlg2.addNumericField("Known Distance",400,2,7,"micrometers");
+	dlg2.showDialog();
+	distance = (double)dlg2.getNextNumber();
+	Spatial_Calib = Math.pow(length/distance, 2);
+}
+
+//******************************************************************************
+//                 Initializing Variables
+//******************************************************************************
+
+double [] Exposure = new double[50];
+double [] Intensity_Image = new double[50];
+double [] Variance = new double[50];
+double [] Exposure_Analysis = new double[50];
+double [] Intensity_Background = new double[50];
+double Image_Slope, Image_Intercept;
+double Variance_Intercept, Variance_Slope;
+double VarInt_Intercept, VarInt_Slope;
+double Background_Intercept, Background_Slope;
+
+//If your camera has a lot of noise and the program is stopping before reaching
+//the saturation limit try increasing the initial exposure time
+Exposure[0] = 5;
+Exposure[1] = 2*Exposure[0];
+Exposure[2] = 2*Exposure[1];
+out = 0;
+m = 0;
+PercentDiff = 0;
+
+//******************************************************************************
+//                      Live Plotting Methods
+//******************************************************************************
+
+plotImage = new ImagePlus("Plots", null); 
+
+//Method for creating the plots
+ImageProcessor getProfilePlot(xaxis,yaxis,x,y,Intercept,Slope) { 	
+	
+	Plot plot = new Plot("Profile", xaxis, yaxis); 
+	PlotWindow.noGridLines = false;
+	plot.setColor(Color.blue);
+	plot.setLineWidth(2);
+	
+	//Determines maximum x and y values
+	Largestx = x[0];
+	Largesty = y[0];
+	
+	for(int i = 1; i < x.length; i++){   
+		if(x[i] > Largestx){
+	   		Largestx = x[i];  
+		}
+		if(y[i] > Largesty){
+			Largesty = y[i];
+		}
+	}
+	
+	//Sets the range of the plots to 1.25 times the largest value
+	plot.setLimits(0, Largestx*1.25, 0, Largesty*1.25); 
+	plot.setColor(Color.blue);
+	plot.addPoints (x, y, PlotWindow.X);
+	if (Intercept != 0.0d && Slope != 0.0d){
+		plot.setColor(Color.red);
+		plot.drawLine(0,Intercept,Largestx,Largestx*Slope + Intercept);
+	}		
+	return plot.getProcessor();
+}
+
+//Method to combine all of the plots into one large image
+ImageProcessor MakeLivePlot(){ 
+	//creates and image processor out of the getProfilePlot method
+	ImageProcessor ipei = getProfilePlot("Exposure Time (ms)","Mean Intensity (ADU/pixel)",Exposure,Intensity_Image,Image_Intercept,Image_Slope); 
+	ImageProcessor ipiv = getProfilePlot("Mean Intensity (ADU/pixel)","Variance (ADU)",Intensity_Image,Variance,VarInt_Intercept,VarInt_Slope);
+	ImageProcessor ipev = getProfilePlot("Exposure Time (ms)","Variance (ADU)",Exposure,Variance,Variance_Intercept,Variance_Slope);
+	ImageProcessor ipeib = getProfilePlot("Exposure Time (ms)","Mean Intensity Background (ADU/pixel)",Exposure_Analysis,Intensity_Background,Background_Intercept,Background_Slope);
+	//Gets the width and height to create an image processor twice the size of a regular processor 
+	width = ipev.getWidth(); 
+	height = ipev.getHeight();
+	ImageProcessor AllLivePlots  = ipei.createProcessor(width*2, height*2);
+	//Inserts each plot into the large image processor
+	AllLivePlots.insert(ipei,0,0); 
+	AllLivePlots.insert(ipiv,width,0);
+	AllLivePlots.insert(ipev,0,height);
+	AllLivePlots.insert(ipeib,width,height);
+	return AllLivePlots;
+}
+
+public static void showLivePlot(){
+	ImageProcessor ip = MakeLivePlot();
+	plotImage.setProcessor(null, ip);
+	plotImage.show();
+	WindowManager.setTempCurrentImage(imp);
+}
+
+//******************************************************************************
+//                  Intensity and Variance Method
+//******************************************************************************
+//This method takes two pictures at the same exposure time.
+//The intensities of the two images are averaged and defined as the intensity 
+//(IntVar[0]). To determine the variance one image is subtracted from the other 
+//and the standard deviation of new image is found. 
+//This value squared divided by two is returned as the variance (IntVar[1])
+
+public static double[] getIntensityVariance(Exp){
+	
+	double [] IntVar = new double[2];
+	mmc.setExposure(Exp); //Set exposure (ms)
+	gui.snapSingleImage(); //Snaps an image
+	ImagePlus imp1 = WindowManager.getCurrentImage();
+	if (roi != null) imp1.setRoi(roi); //Sets the ROI if one is defined
+	ImageStatistics stats1 = imp1.getStatistics();
+	ImageProcessor ip1 = imp1.getProcessor();
+
+	w = gui.getImageWidth();
+	h = gui.getImageHeight();
+	subtract = new FloatProcessor(w,h);
+	//Stores a copy of the image in a new image processor
+	subtract.copyBits(ip1,0,0,Blitter.COPY); 
+
+	if (Exp > 0){
+		gui.snapSingleImage(); //Snaps an image
+
+		ImagePlus imp2 = WindowManager.getCurrentImage();
+		if (roi != null) imp2.setRoi(roi);
+		ImageStatistics stats2 = imp2.getStatistics();
+		ImageProcessor ip2 = imp2.getProcessor();
+
+		IntVar[0] = (stats1.mean+stats2.mean)/2; //Intensity
+
+		//Subtracts the image from the subtract image processor
+		subtract.copyBits(ip2,0,0,Blitter.SUBTRACT);
+		ImagePlus subplus = new ImagePlus("Subtract",subtract);
+		if (roi != null) subtract.setRoi(roi);
+		ImageStatistics statsDiff = subtract.getStatistics();
+		IntVar[1]=statsDiff.stdDev*statsDiff.stdDev/2; //Variance
+	}
+	return(IntVar);
+}
+
+
+//******************************************************************************
+//                  Variance and Saturation Limit
+//******************************************************************************
+
+mmc.setExposure(20);
+gui.closeAllAcquisitions();
+ij.WindowManager.closeAllWindows();
+gui.snapSingleImage(); 
+IJ.setTool("oval");
+
+new WaitForUserDialog("","Place fluorescence reference material on microscope "+
+	"and focus on the bottom surface \nNOTE: Make sure the live acquisition is stopped before pressing OK"+
+	"\n \nOPTIONAL: Select ROI").show();
+	if(gui.isLiveModeOn()) gui.enableLiveMode(false);//stops live mode if it is on
+ImagePlus imp = WindowManager.getCurrentImage();
+Roi roi = imp.getRoi();
+
+//Loop to determine the two bounding points - one that is in the linear range 
+//of detection and one that is outside. Each time through the loop the exposure
+//is doubled. 
+for (int i = 0; i <= 40; i++) {
+	
+	IntVar = getIntensityVariance(Exposure[i]);
+	Intensity_Image[i] = IntVar[0];
+	Variance[i] = IntVar[1];
+	m = m + 1;
+
+	showLivePlot();
+
+	if (i > 2){
+	
+		Intensity_Image_cf = Arrays.copyOf(Intensity_Image,i);
+		Variance_cf = Arrays.copyOf(Variance,i);
+		cf = new CurveFitter(Intensity_Image_cf,Variance_cf); 
+		cf.doFit(0); //Finds the linear fit of variance versus intensity
+		double[] VarInt_Parameters = cf.getParams();
+		//Predicts what the variance should be based on all previous measurements 
+		//and the intensity.
+		Prediction = VarInt_Parameters[1]*Intensity_Image[i]+VarInt_Parameters[0];
+		PercentDiff = 100*Math.abs(Prediction - Variance[i])/Variance[i];
+	}
+	//If the percent difference between the variance and the predicted variance is
+	// greater than 15% the point is defined as outside of the linear range and 
+	//new variables are created to begin the golden ratio search
+	if (PercentDiff < 15){
+		Exposure[i+1] = Exposure[i]*2;
+		start = i;
+	} else {
+		a = Exposure[i-1];
+		b = Exposure[i];
+		c = (Math.sqrt(5)-1)/2;
+		x1 = c*a+(1-c)*b;
+		x2 = (1-c)*a+c*b;
+		IntVar1 = getIntensityVariance(x1);
+		fx1 = IntVar1[1];
+		IntVar2 = getIntensityVariance(x2);
+		fx2 = IntVar2[1];
+		Exposure[m] = x1;
+		Variance[m] = fx1;
+		Intensity_Image[m] = IntVar1[0];
+		Exposure[m+1] = x2;
+		Variance[m+1] = fx2;
+		Intensity_Image[m+1] = IntVar2[0];		
+		m = m + 2;
+		break;
+	}
+}
+
+//Using the bounding points this loop preforms a golden ratio search
+//for the maximum variance
+for (i = start; i < 20; i++){
+	
+	showLivePlot();
+
+	if (fx1 > fx2){
+		b = x2;
+		x2 = x1;
+		fx2 = fx1;
+		x1 = c*a+(1-c)*b;
+		IntVar1 = getIntensityVariance(x1);
+		fx1 = IntVar1[1];
+				
+		Exposure[m] = x1;
+		Variance[m] = fx1;
+		Intensity_Image[m] = IntVar1[0];		
+	} else {
+		a = x1;
+		x1 = x2;
+		fx1 = fx2;
+		x2 = (1-c)*a+c*b;
+		IntVar2 = getIntensityVariance(x2);
+		fx2 = IntVar2[1];
+		Exposure[m] = x2;
+		Variance[m] = fx2;
+		Intensity_Image[m] = IntVar2[0];	
+	}
+	m = m + 1;		
+	//A tolerance of a*a*.00001 was chosen becasue the tolderance changes based
+	//on the length of the last exposure time. 
+	if (Math.abs(a-b) < a*a*.00001){
+		out = 1; 
+		count = i+1;
+		break;
+	}
+}
+
+//Only the data taken in the search for the bounding points, excluding the 
+//one outside of the linear range, is used to calculate the benchmarking 
+//parameters.
+Exposure = Arrays.copyOf(Exposure,m);
+Intensity_Image = Arrays.copyOf(Intensity_Image,m);
+Variance = Arrays.copyOf(Variance,m);
+
+Exposure_Analysis = Arrays.copyOf(Exposure,start+1);
+Intensity_Image_Analysis = Arrays.copyOf(Intensity_Image,start+1);
+Variance_Analysis = Arrays.copyOf(Variance,start+1);
+
+cf1 = new CurveFitter(Exposure_Analysis,Intensity_Image_Analysis); 
+cf1.doFit(0);
+double[] Image_Parameters = cf1.getParams();
+Image_Slope = Image_Parameters[1];
+Image_Intercept = Image_Parameters[0];
+
+cf2 = new CurveFitter(Exposure_Analysis,Variance_Analysis); 
+cf2.doFit(0);
+double[] Variance_Parameters = cf2.getParams();
+Variance_Slope = Variance_Parameters[1];
+Variance_Intercept = Variance_Parameters[0];
+
+cf3 = new CurveFitter(Intensity_Image_Analysis,Variance_Analysis); 
+cf3.doFit(0);
+double[] VarInt_Parameters = cf3.getParams();
+VarInt_Slope = VarInt_Parameters[1];
+VarInt_Intercept = VarInt_Parameters[0];
+
+//Determines the maximum variance, corresponding exposure time, and corresponding 
+//intensity. The corresponding exposure time is the saturation.
+MaxVar = 0;
+for (i = 0; i < Variance.length; i++){
+	if (Variance[i] >= MaxVar){
+		MaxVar = Variance[i];
+		Saturation_Limit = Exposure[i];
+		Mean_Intensity = Intensity_Image[i];
+	}
+}
+
+//******************************************************************************
+//                          Background Analysis
+//******************************************************************************
+
+double[] Intensity_Background = new double[Exposure_Analysis.length];
+
+new WaitForUserDialog("","Remove fluorescent reference material and "+
+"make no other changes to the microscope system").show();
+
+//This loop takes an image of the background at all exposure times used to 
+//calculate the parameters
+for (int i=0; i<Exposure_Analysis.length; i++) {
+	
+	mmc.setExposure(Exposure_Analysis[i]);  //Set exposure (ms)
+	gui.snapSingleImage();
+	gui.sleep(100); //gives the screen time to update and record the correct bkgd intensity
+	ImagePlus imp = WindowManager.getCurrentImage();
+	if (roi != null) imp.setRoi(roi);
+
+	ImageStatistics stats = imp.getStatistics();
+	Intensity_Background[i] = stats.mean;
+}
+
+cf4 = new CurveFitter(Exposure_Analysis,Intensity_Background); 
+cf4.doFit(0);
+double[] Background_Parameters = cf4.getParams();
+
+Background_Slope = Background_Parameters[1];
+Background_Intercept = Background_Parameters[0];
+
+showLivePlot();
+
+//******************************************************************************
+//                         Compute Limit of Detection
+//******************************************************************************
+
+n = 10 * Spatial_Calib;
+a = n *(Image_Slope - Background_Slope);
+b = n * VarInt_Slope * (Image_Slope + Background_Slope);
+c = 2*Variance_Intercept*Variance_Intercept/n;
+
+Limit_of_Detection = (3*Math.sqrt(4*a*a*c+9*b*b)+9*b)/(2*a*a);
+
+//******************************************************************************
+//                     Compute Intesnisty Calibration Constant
+//******************************************************************************
+
+Intensity_Calibration = n * (Image_Slope - Background_Slope);
+
+//******************************************************************************
+//                     Compute Linear Dynamic Range
+//******************************************************************************
+
+Linear_Dynamic_Range = Math.log10(Saturation_Limit/Limit_of_Detection);
+
+//******************************************************************************
+//                             Display Results
+//******************************************************************************
+
+//Creates the benchmark performance parameters results table
+String [] Params = {"Detection Threshold (ms)","Saturation (ms)",
+	"Linear Dynamic Range(log[Sat./Detect.Thresh.])","Intensity Calibration (ADU/10um^2*ms)",
+	"Mean Intensity at Saturation (ADU)","Slope Intensity vs. Exposure (counts/ms)",
+	"Intercept Intensity vs. Exposure(counts)","Slope of Background (counts/ms)",
+	"Slope of Variance vs. Intensity (ratio)","Intercept of Variance vs. Exposure (counts/pixel)"};
+double [] Values = {Limit_of_Detection,Saturation_Limit,Linear_Dynamic_Range,
+	Intensity_Calibration,Mean_Intensity,Image_Slope,Image_Intercept,
+	Background_Slope,VarInt_Slope,Variance_Intercept};
+
+ResultsTable rt1 = new ResultsTable();
+rt1.showRowNumbers(false);
+rt1.setPrecision(4);
+
+for (i=0; i < Values.length; i++){
+	rt1.incrementCounter();
+	rt1.addLabel("Parameters",Params[i]);
+	rt1.addValue("Value",Values[i]);
+}
+rt1.incrementCounter();
+rt1.addValue("Value", Math.sqrt(1/Spatial_Calib));
+if (Need_Spatial_Calib == true){
+	rt1.setLabel("Spatial Calibration (um/pixel) - Measured",i); 
+} else {
+	rt1.setLabel("Spatial Calibration (um/pixel) - User Defined",i); 
+}
+
+//Creates the data results table if the user chose to diplay the data
+if (showData == true){
+	ResultsTable rt2 = new ResultsTable();
+	rt2.setPrecision(9);
+	rt2.showRowNumbers(false);
+	for (i=0; i<Exposure.length; i++){
+		rt2.incrementCounter();
+		rt2.addValue("Exposure",Exposure[i]);
+		rt2.addValue("Intensity",Intensity_Image[i]);
+		rt2.addValue("Variance",Variance[i]);
+		if (i < Intensity_Background.length){
+			rt2.addValue("Background",Intensity_Background[i]);
+		}
+	}
+rt2.show("Data");
+}
+rt1.show("Benchmark Performance Parameters");

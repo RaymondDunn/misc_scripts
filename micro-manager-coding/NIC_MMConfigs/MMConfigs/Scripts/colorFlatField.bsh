@@ -1,0 +1,48 @@
+import ij.IJ;
+
+//Load flatfielding images
+redImage = "D:\\Kurt\\FlatField_RGB_0000.tif";
+greenImage = "D:\\Kurt\\FlatField_RGB_0001.tif";
+blueImage ="D:\\Kurt\\FlatField_RGB_0002.tif";
+Imp = IJ.openImage(redImage);
+Ip = Imp.getProcessor();
+redPix = Ip.getPixelsCopy();
+Imp = IJ.openImage(greenImage);
+Ip = Imp.getProcessor();
+greenPix = Ip.getPixelsCopy();
+Imp = IJ.openImage(blueImage);
+Ip = Imp.getProcessor();
+bluePix = Ip.getPixelsCopy();
+
+//Load acquisition
+acquisitionName = gui.openAcquisitionData("D:\\Kurt\\testImg", false, true);
+acquisition = gui.getAcquisition(acquisitionName);
+acqWindow = acquisition.getAcquisitionWindow();
+
+//Have to iterate over positions here. Everything else is in imagePlus.
+//get imagePlus corresponding to current position
+currip = acqWindow.getImagePlus();
+nChannels = currip.getNChannels();
+
+//need to check that these match flat field images
+int height = currip.height;
+int width = currip.width;
+//iterate over slices and frames
+int slice = 1;
+int frame = 1;
+for (int channel = 0; channel < nChannels; channel++){
+	gui.message("looping...");
+	currip.setPositionWithoutUpdate(channel, slice, frame);
+	imp = currip.getProcessor();
+	sourcePix = imp.getPixels();
+	//array for storage of new image
+	short[] newPixels = new short[width * height];
+	//iterate over pixels and do division
+	for (int index = 0; index < height * width; index++){
+		pix = (float)sourcePix[index] / (float)redPix[index];
+		//convert back to 16 bit; 0 -> 0 and 1 -> 65535. Values above or below are truncated
+		pix = Math.min(pix, 1);
+		pix = Math.max(0, pix * 65535);
+		newPixels[index] = (short) pix;
+	}
+}

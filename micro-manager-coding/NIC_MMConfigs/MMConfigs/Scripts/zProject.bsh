@@ -1,0 +1,14 @@
+import ij.IJ;
+acquisitionName = gui.openAcquisitionData("D:\\Test_grid_Z\\test_4", false, true);
+acquisition = gui.getAcquisition(acquisitionName);
+acqWindow = acquisition.getAcquisitionWindow();
+
+nPos = acqWindow.getNumPositions();
+gui.message("Total " + nPos + " positions");
+
+for (int pos = 0; pos < nPos; pos++){
+	acqWindow.setPosition(pos);
+	IJ.run("Z Project...", "start=1 stop=21 projection=[Min Intensity]");
+	IJ.saveAs("Tiff", "D:\\Test_grid_Z\\test_4_MIN\\img_" + pos + ".tif");
+	IJ.run("Close", "");
+}

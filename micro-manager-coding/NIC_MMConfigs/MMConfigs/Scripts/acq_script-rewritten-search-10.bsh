@@ -1,0 +1,1106 @@
+import org.micromanager.api.PositionList;
+import org.micromanager.api.MultiStagePosition;
+import org.micromanager.api.StagePosition;
+import org.micromanager.api.AcquisitionOptions;
+import ij.*;
+import ij.io.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.plugin.filter.RankFilters;
+
+import java.util.*;
+
+/********************************************************
+DON'T TOUCH ANYTHING
+
+now adjusted to only use the main Z stage to avoid out of range
+errors from accidentally going overboard on nanoscan Z
+********************************************************/
+
+//DON'T USE BACKSLASHES (\) USE FORWARD SLASHES (/)
+
+//DON'T ASK ME WHY
+
+String output_dir = IJ.getDirectory("Choose Output Directory");
+String align_dir = IJ.getDirectory("Choose Eventual Alignment Directory");
+
+if (output_dir==null||align_dir==null) {
+	return;
+}
+
+output_dir.replace('\\','/');
+align_dir.replace('\\','/');
+
+/********************************************
+
+Methods below
+
+*********************************************/
+
+void takeMovie(int nf, ImageStack istack) {
+	int iwidth = (int)mmc.getImageWidth();
+	int iheight = (int)mmc.getImageHeight();
+
+	while (mmc.getRemainingImageCount() > 0) {mmc.popNextImage();} //clear images
+	counter=0;
+	autofocus_value=0;
+	
+	boolean tryagain=false;;
+	
+	do {
+		tryagain=false;
+		try {
+			mmc.startSequenceAcquisition(nf,0,false);
+		} catch (Exception e) {
+			printLog(""+e);
+			tryagain=true;
+			gui.sleep(1000);
+		}
+	} while (tryagain);
+
+	long failcount=1;
+	long loopstart=System.currentTimeMillis();
+ 	while (counter<nf) {
+		if (mmc.getRemainingImageCount() > 0 ) {
+        		short [] pixels = mmc.popNextImage();   //type Object
+        		ip = new ShortProcessor(iwidth, iheight);
+        		ip.setPixels(pixels);
+	
+			istack.addSlice(null,ip);
+			counter++;
+        	}//the following is designed to prevent an error where the acquisition fails to trigger
+        else if (failcount%1000000==0) {//in tests, counting to 1000000 takes ~1.5 seconds in a relatively empty loop
+            if (System.currentTimeMillis()-loopstart>10000) { //if this took more than 10 seconds, try again
+                mmc.startSequenceAcquisition(nf,0,false);
+                gui.sleep(1000);
+                loopstart=System.currentTimeMillis();
+            }
+        }
+        failcount++;
+   	}
+	mmc.stopSequenceAcquisition();
+}
+
+RankFilters rf = new RankFilters();
+rf.makeKernel(2);
+
+int impcounter=0;
+
+void takeLongPic(String title) {
+	st = new ImageStack(image_width,image_height);
+
+	mmc.setExposure(2000);
+	mmc.setProperty("Laser-Shutter","488nm mW  ",5);
+	mmc.setProperty("Laser-Shutter","Strobe","Off");
+
+	takeMovie(1,st);
+	gui.sleep(2100);
+
+	mmc.setExposure(5);
+	mmc.setProperty("Laser-Shutter","488nm mW  ",49.59);
+	mmc.setProperty("Laser-Shutter","Strobe","On");
+
+	ImageProcessor ip = st.getProcessor(1);
+
+//	ImageProcessor ip2 = ip.duplicate();
+
+//	(new ImagePlus("original",ip2)).show();
+
+	ip.autoThreshold();
+	ip.medianFilter();
+	ip = ip.convertToFloat();
+	ImagePlus imptemp=new ImagePlus(title,ip);
+
+	rf.setup("outliers",imptemp);
+	rf.run(imptemp.getProcessor());
+	rf.run(imptemp.getProcessor());
+
+	imptemp.show();
+}
+
+
+void findXYExtents(int [] result) {
+	st = new ImageStack(image_width,image_height);
+
+	mmc.setExposure(2000);
+	mmc.setProperty("Laser-Shutter","488nm mW  ",5);//less than 5 starts to dim too much
+
+	mmc.setProperty("Laser-Shutter","Strobe","Off");
+
+	takeMovie(1,st);
+	gui.sleep(2100);
+
+	mmc.setExposure(5);
+	mmc.setProperty("Laser-Shutter","488nm mW  ",49.59);
+	mmc.setProperty("Laser-Shutter","Strobe","On");
+
+	ImageProcessor ip = st.getProcessor(1);
+
+	ImageProcessor ip2 = ip.duplicate();
+
+//	(new ImagePlus("original",ip2)).show();
+
+	ip.autoThreshold();
+	ip.medianFilter();
+	ip = ip.convertToFloat();
+	ImagePlus imptemp=new ImagePlus("imptemp"+(impcounter++),ip);
+
+	rf.setup("outliers",imptemp);
+	rf.run(ip);
+	rf.run(ip);
+
+//	imptemp.show();
+	int xmin=image_width;
+	int xmax=0;
+	int ymin=image_height;
+	int ymax=0;
+
+
+    //NEW - faster and more noise resistant search
+    //finds rows/columns with 10 adjacent pixels (no false positives from dots)
+	boolean found=false;
+	int [] data = new int[image_width];
+    for (y=0; y<image_height; y++) {
+        ip.getRow(0,y,data,image_height);
+        int xcount = 0;
+        for (x=0; x<image_width; x++) {
+            if (data[x]!=0) {
+                xcount++;
+                if (xcount>=10) {
+                    found=true;
+                    break;
+                }
+            }
+            else {
+                xcount=0;
+            }
+        }
+        if (found) {
+            ymin=y;
+            break;
+        }
+    }
+    found=false;
+    for (y=image_height-1; y>=0; y--) {
+        ip.getRow(0,y,data,image_height);
+        int xcount = 0;
+        for (x=0; x<image_width; x++) {
+            if (data[x]!=0) {
+                xcount++;
+                if (xcount>=10) {
+                    found=true;
+                    break;
+                }
+            }
+            else {
+                xcount=0;
+            }
+        }
+        if (found) {
+            ymax=y;
+            break;
+        }
+    }
+    found=false;
+    for (x=0; x<image_width; x++) {
+        ip.getColumn(x,0,data,image_width);
+        int ycount = 0;
+        for (y=0; y<image_height; y++) {
+            if (data[y]!=0) {
+                ycount++;
+                if (ycount>=10) {
+                    found=true;
+                    break;
+                }
+            }
+            else {
+                ycount=0;
+            }
+        }
+        if (found) {
+            xmin=x;
+            break;
+        }
+    }
+    found=false;
+    for (x=image_width-1; x>=0; x--) {
+        ip.getColumn(x,0,data,image_width);
+        int ycount = 0;
+        for (y=0; y<image_height; y++) {
+            if (data[y]!=0) {
+                ycount++;
+                if (ycount>=10) {
+                    found=true;
+                    break;
+                }
+            }
+            else {
+                ycount=0;
+            }
+        }
+        if (found) {
+            xmax=x;
+            break;
+        }
+    }
+
+	result[0]=xmin;
+	result[1]=xmax;
+	result[2]=ymin;
+	result[3]=ymax;
+//	for (i=0; i<4; i++) {print("result["+i+"]="+result[i]);}
+}
+
+void gClear() {gui.clearMessageWindow();}
+
+FileWriter logFile;
+PrintWriter log;
+
+FileWriter logalignFile;
+PrintWriter logalign;
+
+Calendar current_cal = Calendar.getInstance();
+
+int current_month = current_cal.get(Calendar.MONTH)+1;
+int current_day = current_cal.get(Calendar.DAY_OF_MONTH);
+
+try {
+	logFile = new FileWriter(output_dir+"beatImage-log-"+current_month+"-"+current_day+".txt");
+	log = new PrintWriter(logFile);
+}
+catch(IOException e) {printLog("problem opening IO"); return;}
+
+if (align_dir!=null) {
+	try {
+		logalignFile = new FileWriter(align_dir+"beatImage-log-"+current_month+"-"+current_day+".txt");
+		logalign = new PrintWriter(logalignFile);
+	}
+	catch(IOException e) {printLog("problem opening align IO"); return;}
+}
+
+void printLog(String s) {
+	try {
+		log.println(s);
+
+		log.flush();
+	} catch(IOException e) {print("failed to write " + s + " to log");}
+
+	if (align_dir!=null) {
+		try {
+			logalign.println(s);
+			logalign.flush();
+		} catch(IOException e) {print("failed to write " + s + " to align log");}
+	}
+	print(s); //mirror to system out
+}
+
+void gClear() {gui.clearMessageWindow();}
+
+/*********************************
+ * END OF METHODS
+ ********************************/
+
+/********************************
+ * Variable Init
+ ********************************/
+
+
+int offset=5;
+
+String zStage = mmc.getFocusDevice();
+String bigZStage = "TIZDrive";
+String xyStage = mmc.getXYStageDevice();
+
+PositionList plist = gui.getPositionList();
+int n_pos = plist.getNumberOfPositions();
+
+double restingZ = 125.0;
+
+MultiStagePosition p0 = plist.getPosition(0);
+
+MultiStagePosition pos=p0;
+
+double x_scale=0.48;
+double y_scale=0.48; //NOT SURE WHY DIFFERENT SCALES
+
+int image_width = (int)mmc.getImageWidth();
+int image_height = (int)mmc.getImageHeight();
+
+ArrayList dead_pos = new ArrayList();
+
+int CUTOFF = 5; //within 5 pixels is good enough for me (~3 microns)
+
+double zero_jump = 50;
+
+double [] zeros = new double[n_pos];
+
+
+ /********************************
+ *  End of Variable Init
+ ********************************/
+
+
+
+//Dialog Code
+
+GenericDialog gd = new GenericDialog("So you want to take a 4D x T movie?");
+
+Font boldfont = new Font("Arial",Font.BOLD,14);
+
+ArrayList loaded_list;
+
+save_list_dir = "C:/MMConfigs/Scripts/";
+
+try {
+	loaded_list = load(save_list_dir+"lastinfo.dat");
+} catch (Exception e) {
+	//default values
+	loaded_list = new ArrayList();
+	loaded_list.add("embryo");
+	loaded_list.add(40);
+	loaded_list.add(1.0);
+	loaded_list.add(90);
+	loaded_list.add(48.0);
+	loaded_list.add(30.0);
+	loaded_list.add(-4.0);
+	loaded_list.add(3.0);
+	loaded_list.add(true);
+	loaded_list.add(50.0);
+	loaded_list.add(0.6);
+	loaded_list.add(true);
+	loaded_list.add(false);
+	loaded_list.add(true);
+	loaded_list.add(72.0);
+	loaded_list.add("cmlc2:ras-GFP");
+	loaded_list.add(31.0);
+	loaded_list.add("0.01% tricaine, 10mM HEPES, 1% agarose");
+	loaded_list.add("Additional Comments");
+}	
+
+int i=0;
+gd.addMessage("Output Directory: " + output_dir);
+gd.addStringField("Base name: ", (String)loaded_list.get(i++), 20);
+gd.addMessage("Imaging Parameters",boldfont);
+gd.addNumericField("Number of slices: ",(Integer)loaded_list.get(i++),0,5,null);
+gd.addNumericField("Z Step: ",(Double)loaded_list.get(i++),0,5,"microns");
+gd.addNumericField("Number of Frames: ",(Integer)loaded_list.get(i++),0,5,null);
+gd.addNumericField("Total Imaging Time: ",(Double)loaded_list.get(i++),1,5,"hours");
+gd.addNumericField("Developmental Interval: ", (Double)loaded_list.get(i++),0,5,"minutes");
+gd.addNumericField("Distance from top of heart to area of interest: ",(Double)loaded_list.get(i++),0,5,"microns");
+gd.addNumericField("multiplier (3 for ras-GFP, 2 for lifeact): ",(Double)loaded_list.get(i++),0,5,null);
+gd.addMessage("XY movement correction",boldfont);
+gd.addCheckbox("Use XY correction",(Boolean)loaded_list.get(i++));
+gd.addNumericField("Distance from top of heart to XY correction: ",(Double)loaded_list.get(i++),0,5,"microns");
+gd.addNumericField("Predicted scale: ",(Double)loaded_list.get(i++),2,5,"micrometers/pixel");
+gd.addMessage("Channel Options",boldfont);
+gd.addCheckbox("GFP",(Boolean)loaded_list.get(i++));
+gd.addCheckbox("RFP",(Boolean)loaded_list.get(i++));
+gd.addCheckbox("autofocus GFP",(Boolean)loaded_list.get(i++));
+gd.addMessage("Experiment Info",boldfont);
+gd.addNumericField("Age of embryos: ",(Double)loaded_list.get(i++),0,5,"hpf");
+gd.addStringField("transgenes/mutations: ", (String)loaded_list.get(i++), 20);
+gd.addNumericField("Temperature: ",(Double)loaded_list.get(i++),0,5,"C");
+gd.addStringField("culture conditions: ", (String)loaded_list.get(i++), 40);
+gd.addTextAreas((String)loaded_list.get(i++),null,3,50);
+
+
+gd.showDialog();
+
+if (gd.wasCanceled()) {
+	printLog("cancelled");
+//	log.close();
+	return;
+}
+
+ArrayList save_list = new ArrayList();
+
+String base_name = gd.getNextString();
+save_list.add(base_name);
+int n_slices = (int)gd.getNextNumber();
+save_list.add(n_slices);
+double z_step = (double)gd.getNextNumber();
+save_list.add(z_step);
+int n_frames = (int)gd.getNextNumber();
+save_list.add(n_frames);
+double hours = (double)gd.getNextNumber();
+save_list.add(hours);
+double input_interval = (double)gd.getNextNumber();
+save_list.add(input_interval);
+long interval = (long)(input_interval * 60000);
+
+int n_times = (int)((hours*60)/input_interval);
+
+double z_jump=(double)gd.getNextNumber();
+save_list.add(z_jump);
+double k_ratio = (double)gd.getNextNumber();
+save_list.add(k_ratio);
+boolean XY_correct = gd.getNextBoolean();
+save_list.add(XY_correct);
+double XY_jump = (double)gd.getNextNumber();
+save_list.add(XY_jump);
+double x_scale = (double)gd.getNextNumber();
+save_list.add(x_scale);
+double y_scale = x_scale;
+
+
+boolean gfp_on = gd.getNextBoolean();
+save_list.add(gfp_on);
+boolean rfp_on = gd.getNextBoolean();
+save_list.add(rfp_on);
+boolean autofocus_channel = gd.getNextBoolean();
+save_list.add(autofocus_channel);
+String [] channels;
+
+if (gfp_on&&rfp_on) {
+	channels = new String[2];
+	if (autofocus_channel) {
+		channels[0]="GFP";
+		channels[1]="RFP_new";
+	}
+	else {
+		channels[0]="RFP_new";
+		channels[1]="GFP";
+	}
+}
+else if (gfp_on) {
+	channels=new String[1];
+	channels[0]="GFP";
+}
+else if (rfp_on) {
+	channels=new String[1];
+	channels[0]="RFP_new";
+}
+else {
+	printLog("you have to pick a channel");
+	return;
+}
+
+double embryo_age = (double)gd.getNextNumber();
+save_list.add(embryo_age);
+String embryo_transgenes = gd.getNextString();
+save_list.add(embryo_transgenes);
+double temperature = (double)gd.getNextNumber();
+save_list.add(temperature);
+String culture_conditions = gd.getNextString();
+save_list.add(culture_conditions);
+String comments = gd.getNextText();
+save_list.add(comments);
+
+save(save_list,save_list_dir+"lastinfo.dat");
+
+printLog("Output directory = " + output_dir);
+printLog("base name = " + base_name);
+printLog("n_slices = " + n_slices);
+printLog("z_step = " + z_step);
+printLog("n_frames = " + n_frames);
+//printLog("strobe duration (microseconds): " + mmc.getProperty("Laser-Shutter","StrobeDuration(us)"));
+printLog("interval = " + interval);
+printLog("n_times = " + n_times);
+printLog("z_jump = " + z_jump);
+printLog("use XY correction: " + XY_correct);
+printLog("jump to XY registration plane: " + XY_jump);
+printLog("scale: " + x_scale);
+printLog(embryo_transgenes + " imaged at " + embryo_age + " hpf");
+printLog("culture conditions: " + culture_conditions);
+if (comments!="Additional Comments") {printLog("comments:\n" + comments);}
+
+String aa="";
+
+for (int c=0; c<channels.length; c++) {
+	aa=aa+channels[c]+", ";
+}
+printLog("channels = " + aa);
+
+//build directory structure
+File output_dir_file = new File(output_dir);
+if (!output_dir_file.exists()) {
+	try {
+		output_dir_file.mkdirs();   
+	} catch (Throwable e) {printLog("error creating directory: " + e.getMessage());}
+}
+for (int i=0; i<n_pos; i++) {
+	String i_num = "000"+i;
+	i_num = i_num.substring(i_num.length()-3);
+	File pos_out_dir=new File(output_dir+"Pos"+i_num);
+	if (pos_out_dir!=null&&!pos_out_dir.exists()) {
+		try {
+			pos_out_dir.mkdirs();
+		} catch(Throwable e) {printLog("error creating directory: " + e.getMessage());}
+	}
+}
+
+//NOW THE SAME FOR THE ALIGNMENT DIRECTORY
+
+if (align_dir!=null) {
+    File align_dir_file = new File(align_dir);
+    if (!align_dir_file.exists()) {
+        try {
+            align_dir_file.mkdirs();   
+        } catch (Throwable e) {printLog("error creating directory: " + e.getMessage());}
+    }
+
+    for (int i=0; i<n_pos; i++) {
+        String i_num = "000"+i;
+        i_num = i_num.substring(i_num.length()-3);
+        File pos_out_dir=new File(align_dir+"Pos"+i_num);
+        if (pos_out_dir!=null&&!pos_out_dir.exists()) {
+            try {
+                pos_out_dir.mkdirs();
+            } catch(Throwable e) {printLog("error creating directory: " + e.getMessage());}
+        }
+    }
+}
+
+
+
+printLog("go time!");
+
+printLog("started at: " + (new Date(System.currentTimeMillis())).toString());
+
+
+/*******************************
+ * INITIALIZE XYZ DRIFT CORRECTION
+ *******************************/
+
+mmc.setExposure(5);
+mmc.setProperty("Laser-Shutter","488nm mW  ",49.59);
+mmc.setProperty("Laser-Shutter","Strobe","On");
+
+int [][] xy_starts = new int[n_pos][4];//xmin,xmax,ymin,ymax
+
+for (int i=0; i<n_pos; i++) {
+	xy_starts[i][0]=-1;
+	xy_starts[i][1]=image_width;
+	xy_starts[i][2]=-1;
+	xy_starts[i][3]=image_height;
+}
+
+double max_kurtosis1=Double.MIN_VALUE;
+double max_kurtosis2=Double.MIN_VALUE;
+double max_kurtosis3=Double.MIN_VALUE;
+
+boolean pos_alive=true;
+
+for (int p=0; p<n_pos; p++) {
+	double oldx=pos.get(xyStage).x;
+   double oldy=pos.get(xyStage).y;
+   pos = plist.getPosition(p);
+   double newx=pos.get(xyStage).x;
+   double newy=pos.get(xyStage).y;
+
+        /*check whether going to second plate
+         or well*/
+
+   if (Math.abs(newx-oldx)>15000 || Math.abs(newy-oldy)>15000) {
+   	mmc.setPosition(bigZStage,500); //drop down to protect lens
+     	try{ 
+			mmc.setXYPosition(xyStage,newx,newy);
+		} catch (Exception e) {;}
+     	gui.sleep(20000);
+   }
+   else {
+     	mmc.setXYPosition(xyStage,newx,newy);
+   }
+   mmc.setPosition(bigZStage,pos.get(bigZStage).x);
+   mmc.setPosition(zStage,restingZ);
+   gui.sleep(3000); //wait for settle
+
+	double drift=-(offset)*z_step;//makes positions start above detectable plane - ensures that they start at negative background
+	zeroing=true;
+	first_slice=true;
+	pos_alive=true;
+
+	print("Initializing position " + p);
+
+	//walk down first time
+	do {
+        mmc.setConfig("Channel",channels[0]);
+        ArrayList chans = new ArrayList();
+        ImageStack st = new ImageStack((int)mmc.getImageWidth(),(int)mmc.getImageHeight());
+        boolean first_try=true;
+
+        if (zeroing) {
+            mmc.setRelativePosition(bigZStage,-zero_jump);
+				gui.sleep(50);		
+        }
+
+        takeMovie(n_frames,st);
+        //			ImagePlus temp_imp = new ImagePlus("temp " + mmc.getPosition(zStage),st);
+        //			temp_imp.show();
+        max_kurtosis1=Double.MIN_VALUE;
+        max_kurtosis2=Double.MIN_VALUE;
+        max_kurtosis3=Double.MIN_VALUE;
+        for (int i=1; i<=st.getSize(); i++) {
+            double k = Math.abs(st.getProcessor(i).getStatistics().kurtosis);//TODO-check on this absolute value
+            //				printLog("i="+i+" k="+k);
+            if (k>max_kurtosis1) {
+                max_kurtosis3=max_kurtosis2;
+                max_kurtosis2=max_kurtosis1;
+                max_kurtosis1=k;
+            }
+            else if (k>max_kurtosis2) {
+                max_kurtosis3=max_kurtosis2;
+                max_kurtosis2=k;
+            }
+            else if (k>max_kurtosis3) {
+                max_kurtosis3=k;
+            }
+        }
+
+        printLog("kurtosis3 at " + drift + " = " + max_kurtosis3);
+
+        if (zeroing) {
+            mmc.setRelativePosition(bigZStage,zero_jump);
+            zeros[p]=max_kurtosis3;//set the zero first time around - ASSUMES THIS IS A TRULY EMPTY FRAME
+            printLog("first zeroing = " + zeros[p]);
+            zeroing=false;
+            gui.sleep(50);
+            continue;
+        }
+
+        if (first_slice) {
+            if (max_kurtosis3>k_ratio*zeros[p]) {
+                printLog("first slice too high at " + p);
+                //					ImagePlus temp_imp = new ImagePlus("temp " + p,st);
+                //					temp_imp.show();
+                mmc.setRelativePosition(bigZStage,-offset);
+                drift-=offset;
+                continue;
+            }
+            zeros[p]=max_kurtosis3;//set the zero first time around - ASSUMES THIS IS A TRULY EMPTY FRAME
+            //					zeros[p]=1.5; //arbitrary start TODO - CHANGE THIS
+            printLog("zeros["+p+"] = " + zeros[p]);
+        }
+        first_slice=false;
+
+        mmc.setRelativePosition(bigZStage,z_step);
+        drift+=z_step;
+
+        if (drift>50) {
+            pos_alive=false;
+            dead_pos.add(p);
+            printLog("pos " + p + "dead at time: " + t + "\noption 2");
+        }
+
+    } while (pos_alive&&max_kurtosis3<k_ratio*zeros[p]);
+	
+	if (!pos_alive) {
+		continue;
+	}
+	
+	pos.get(bigZStage).x+=drift;
+	
+	//now initialize XY
+	if (XY_correct) {
+		MultiStagePosition.goToPosition(pos,mmc);
+		gui.sleep(50); //wait for settle
+		
+		mmc.setRelativePosition(bigZStage,XY_jump);
+		gui.sleep(100);
+		findXYExtents(xy_starts[p]);	
+		
+		takeLongPic("Start for " + p);
+		
+		if ((xy_starts[p][0]<=0&&xy_starts[p][1]>=image_width-1)||(xy_starts[p][2]<=0&&xy_starts[p][3]>=image_height-1)) {
+			printLog("no good starting point for position: " + p);
+ 			pos_alive=false;
+         dead_pos.add(p);
+		}
+		else {
+			printLog("position " + p + " starting xy values: ");
+			printLog("xmin: " + xy_starts[p][0] + " xmax: " + xy_starts[p][1] + " ymin: " + xy_starts[p][2] + " ymax: " + xy_starts[p][3]); 
+		}
+	}
+	else {
+		printLog("no XY correct");
+	}
+
+}
+
+/*******************************
+ * END OF XYZ DRIFT CORRECTION INITIALIZATION
+ *******************************/
+
+printLog("DONE WITH INIT!");
+
+/***********************
+ * START OF TIME LAPSE
+ ***********************/
+
+for (int t=0; t<n_times; t++) {
+    printLog("time " + t + " started at: " + (new Date(System.currentTimeMillis())).toString());
+    String t_num = "000" + t;
+    t_num = t_num.substring(t_num.length()-3);
+    long start_time = System.currentTimeMillis();
+    for (int p=0; p<n_pos; p++) {
+        if (dead_pos.contains(p)) {continue;}
+        printLog("position " + p + " started");
+        String p_num = "000"+p;
+        p_num = p_num.substring(p_num.length()-3);
+
+        double oldx=pos.get(xyStage).x;
+        double oldy=pos.get(xyStage).y;
+        pos = plist.getPosition(p);
+        double newx=pos.get(xyStage).x;
+        double newy=pos.get(xyStage).y;
+
+        /*check whether going to second plate
+         or well*/
+
+        if (Math.abs(newx-oldx)>15000 || Math.abs(newy-oldy)>15000) {
+        	mmc.setPosition(bigZStage,500); //drop down to protect lens
+        	try{ 
+				mmc.setXYPosition(xyStage,newx,newy);
+			} catch (Exception e) {;}
+        	gui.sleep(20000);
+        }
+        else {
+        	mmc.setXYPosition(xyStage,newx,newy);
+        }
+        mmc.setPosition(bigZStage,pos.get(bigZStage).x);
+        mmc.setPosition(zStage,restingZ);
+        gui.sleep(3000); //wait for settle
+
+        double drift=-(offset+1)*z_step;//1 extra to buffer
+        ArrayList stacks = new ArrayList();
+        //take images progressively until 2*zeros[p] kurtosis is reached - usually < 5 microns into chamber
+        //add to a stack in case there are more than necessary
+        boolean first_slice=true;
+        double max_kurtosis1=Double.MIN_VALUE;
+        double max_kurtosis2=Double.MIN_VALUE;
+        double max_kurtosis3=Double.MIN_VALUE;
+        boolean pos_alive=!dead_pos.contains(p);
+        do {
+            mmc.setConfig("Channel",channels[0]);
+            ArrayList chans = new ArrayList();
+            ImageStack st = new ImageStack((int)mmc.getImageWidth(),(int)mmc.getImageHeight());
+            boolean first_try=true;
+            takeMovie(n_frames,st);
+            //			ImagePlus temp_imp = new ImagePlus("temp " + mmc.getPosition(zStage),st);
+            //			temp_imp.show();
+            max_kurtosis1=Double.MIN_VALUE;
+            max_kurtosis2=Double.MIN_VALUE;
+            max_kurtosis3=Double.MIN_VALUE;
+            for (int i=1; i<=st.getSize(); i++) {
+                double k = Math.abs(st.getProcessor(i).getStatistics().kurtosis);//TODO-check on this absolute value
+                //				printLog("i="+i+" k="+k);
+                if (k>max_kurtosis1) {
+                    max_kurtosis3=max_kurtosis2;
+                    max_kurtosis2=max_kurtosis1;
+                    max_kurtosis1=k;
+                }
+                else if (k>max_kurtosis2) {
+                    max_kurtosis3=max_kurtosis2;
+                    max_kurtosis2=k;
+                }
+                else if (k>max_kurtosis3) {
+                    max_kurtosis3=k;
+                }
+            }
+
+            printLog("kurtosis3 at " + drift + " = " + max_kurtosis3);
+            if (first_slice&&
+                max_kurtosis3>k_ratio*zeros[p]) {
+                mmc.setRelativePosition(bigZStage,-offset*z_step);//set bigZStage up - fixes condition where jumping up still gets within less than offset of condition
+                max_kurtosis3=zeros[p]; //to get it through the continuation condition
+                drift-=offset*z_step;
+                printLog("drift now = " + drift);
+                if (drift<-50) {
+                    pos_alive=false;
+                    dead_pos.add(p);
+                    printLog("pos " + p + "dead at time: " + t);
+                }
+            }
+            else {
+                first_slice=false;
+                mmc.setRelativePosition(bigZStage,z_step);
+                drift+=z_step;
+
+                if (drift>50) {
+                    pos_alive=false;
+                    dead_pos.add(p);
+                    printLog("pos " + p + "dead at time: " + t + "\noption 2");
+                }
+
+                gui.sleep(50);
+            }
+        } while (pos_alive&&max_kurtosis3<k_ratio*zeros[p]);
+
+	//if it has been declared dead, skip to the next position
+	if (pos_alive==false) {
+		continue;
+	}
+        //adjust position to account for the drift this time around
+        printLog("drift = " + drift);
+        pos.get(bigZStage).x+=drift;
+
+	//check for XY drift
+	if (XY_correct) {
+		mmc.setRelativePosition(bigZStage,XY_jump);
+		//add jiggle
+//			pos.get(xyStage).y+=30;
+//			pos.get(xyStage).x+=40;
+	
+//			gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+//			gui.sleep(50);
+//			takeLongPic("jiggled " + p + " time " + t);
+	
+		int [] xys = new int[4];
+		int [] oldxys = new int[4];
+		findXYExtents(xys);
+	
+		int num_jump_tries=3;
+		int num_convergence_tries=5;
+	
+		if (xy_starts[p][0]>0) {//left - xmin
+			printLog("left check");
+			for (i=0; i<num_jump_tries; i++) {//avoid jumping too far
+				if (xys[0]<=0) {
+					pos.get(xyStage).x-=image_width*3/4*x_scale;
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					findXYExtents(xys);
+				}
+				else {
+					break;
+				}
+			}
+			if (i==num_jump_tries) {
+			    pos_alive=false;
+	                    dead_pos.add(p);
+	                    printLog("pos " + p + "dead at time: " + t + "in find x jumps");
+	                    continue;
+			}
+			
+			int diff=xys[0]-xy_starts[p][0];
+			for (i=0; i<num_convergence_tries; i++) {
+				if (Math.abs(diff)>CUTOFF) {
+					printLog("diff = " + diff + " move by: " + (diff*x_scale));
+					pos.get(xyStage).x+=diff*x_scale;
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					for (i=0; i<4; i++) {oldxys[i]=xys[i];}
+					findXYExtents(xys);
+		//				print("new x_scale  = " + Math.abs(diff*x_scale/(xys[0]-oldxys[0])));
+		//				print("old x_scale = " + x_scale);
+					diff=xys[0]-xy_starts[p][0];
+				}
+			}
+		}
+		else {//right
+			printLog("right check");
+			for (i=0; i<num_jump_tries; i++) {//avoid jumping too far
+				if (xys[1]>=image_width-1) {
+					pos.get(xyStage).x+=image_width*3/4*x_scale;
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					findXYExtents(xys);
+				}
+				else {
+					break;
+				}
+			}
+			if (i==num_jump_tries) { //got to end of jumps
+			    pos_alive=false;
+	                    dead_pos.add(p);
+	                    printLog("pos " + p + "dead at time: " + t + "in find x jumps");
+	                    continue;
+			}
+			int diff=xys[1]-xy_starts[p][1];
+			for (i=0; i<num_convergence_tries; i++) {
+				if (Math.abs(diff)>CUTOFF) {
+					printLog("diff = " + diff + " move by: " + (diff*x_scale));
+					pos.get(xyStage).x+=diff*x_scale;
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					for (i=0; i<4; i++) {oldxys[i]=xys[i];}
+					findXYExtents(xys);
+		//				print("new x_scale  = " + Math.abs(diff*x_scale/(xys[1]-oldxys[1])));
+		//				print("old x_scale = " + x_scale);
+	        			diff=xys[1]-xy_starts[p][1];
+				}
+			}
+		}
+	
+		gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+		gui.sleep(50);
+	//		print("after x move:");
+	//		findXYExtents(xys);
+	//		takeLongPic("fixed x time " + t);
+	
+		if (xy_starts[p][2]>0) {//top - ymin
+	//			print("c");
+			for (i=0; i<num_jump_tries; i++) {//avoid jumping too far
+				if (xys[2]<=0) {
+	//				print("ticky");
+					pos.get(xyStage).y-=image_height*3/4*y_scale; //NOTE CHANGE BACK TO XY SCALE TODO
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					findXYExtents(xys);
+	//				takeLongPic("after ticky");
+				}
+				else {
+					break;
+				}
+			}
+			if (i==num_jump_tries) { //got to end of jumps
+			    pos_alive=false;
+	                    dead_pos.add(p);
+	                    printLog("pos " + p + "dead at time: " + t + "in find y jumps");
+	                    continue;
+			}
+			
+			int diff=xys[2]-xy_starts[p][2];
+			for (i=0; i<num_convergence_tries; i++) {
+				if (Math.abs(diff)>CUTOFF) {
+					printLog("diff = " + diff + " move by: " + (diff*y_scale));
+					pos.get(xyStage).y+=diff*y_scale;
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					for (i=0; i<4; i++) {oldxys[i]=xys[i];}
+					findXYExtents(xys);
+		//				print("new y_scale  = " + Math.abs(diff*y_scale/(xys[2]-oldxys[2])));
+		//				print("old y_scale = " + y_scale);
+					diff=xys[2]-xy_starts[p][2];
+				}
+			}			
+		}
+		else {//bottom
+	//			print("d");
+			for (i=0; i<num_jump_tries; i++) {//avoid jumping too far
+				if (xys[3]>=image_height-1) {
+	//				print("ticky");
+					pos.get(xyStage).y+=image_height*3/4*y_scale;//NOTE CHANGE BACK TO XY SCALE TODO
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					findXYExtents(xys);			
+	//				takeLongPic("after ticky");
+				}
+				else {
+					break;
+				}
+			}
+			if (i==num_jump_tries) { //got to end of jumps
+			    pos_alive=false;
+	                    dead_pos.add(p);
+	                    printLog("pos " + p + "dead at time: " + t + "in find y jumps");
+	                    continue;
+			}
+			
+			int diff = xys[3]-xy_starts[p][3];
+			for (i=0; i<num_convergence_tries; i++) {
+				if (Math.abs(diff)>CUTOFF) {
+					printLog("diff = " + diff + " move by: " + (diff*y_scale));
+					pos.get(xyStage).y+=diff*y_scale;
+					gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+					gui.sleep(100);
+					for (i=0; i<4; i++) {oldxys[i]=xys[i];}
+					findXYExtents(xys);
+		//				print("new y_scale  = " + Math.abs(diff*y_scale/(xys[3]-oldxys[3])));
+		//				print("old y_scale = " + y_scale);
+					diff=xys[3]-xy_starts[p][3];
+				}
+			}	
+		}
+	}
+	else {
+		printLog("no XY correction");
+	}
+	
+	gui.setXYStagePosition(pos.get(xyStage).x,pos.get(xyStage).y);
+	gui.sleep(200);
+//		print("after y move:");
+//		findXYExtents(xys);
+//		takeLongPic("fixed y time " + t);
+
+	
+
+	//take stack and save
+
+	//reset position to imaging plane
+	mmc.setPosition(bigZStage,pos.get(bigZStage).x+z_jump);
+
+	gui.sleep(200);	
+
+	printLog("now imaging position " + p + " time " + t + "- started at: " + (new Date(System.currentTimeMillis())).toString());
+
+        for (int z=0; z<n_slices; z++) {
+            String z_num = "000" + z;
+            z_num = z_num.substring(z_num.length()-3);
+            String acq_name = "p_"+p_num+"_t_"+t_num+"_z_"+z_num;
+
+	    IJ.showStatus("acquiring t = " + t + " p = " + p + " z = " + z + "/"+n_slices);
+	    IJ.showProgress(z,n_slices);
+
+            ArrayList chan = new ArrayList();
+            for (int c=0; c<channels.length; c++) {
+                ImageStack acq_stack = new ImageStack((int)mmc.getImageWidth(),(int)mmc.getImageHeight());
+                mmc.setConfig("Channel",channels[c]);
+                gui.sleep(50);
+                takeMovie(n_frames,acq_stack);
+                chan.add(acq_stack);
+            }
+
+            ImageStack multi_stack=new ImageStack((int)mmc.getImageWidth(),(int)mmc.getImageHeight());
+
+            for (int j=1; j<n_frames; j++) {//trim the first away - often errors in BF
+                for (int c=0; c<channels.length; c++) {
+                    multi_stack.addSlice(null,chan.get(c).getProcessor(j+1));
+                }
+            }
+                //			print("1");
+            ImagePlus multichannel = new ImagePlus(base_name+"_"+acq_name,multi_stack);
+            //			print("2");
+            multichannel = new CompositeImage(multichannel,CompositeImage.COMPOSITE);
+            //			print("3");
+            multichannel.setDimensions(channels.length,1,multi_stack.getSize()/channels.length);
+
+				boolean saved = false;
+				int save_fail_count=0;
+				File save_file = new File(output_dir + "Pos" + p_num + "/");
+
+           	while (!save_file.exists()) { //loop in case hard drive disconnects like an obnoxious thing
+            	printLog("cannot find folder - waiting 5 sec - cycle#" + (save_fail_count++));
+					gui.sleep(5000);
+				}
+
+				FileSaver saver = new FileSaver(multichannel);
+				saver.saveAsTiffStack(output_dir + "Pos" + p_num + "/" + base_name+"_"+acq_name+".tif");
+
+	    printLog("saved: " + output_dir + "Pos" + p_num + "/" + base_name+"_"+acq_name+".tif");
+            /*
+             for (int c=0; c<channels.length; c++) {
+             FileSaver saver = new FileSaver(new ImagePlus(acq_name,chan.get(c)));
+             //format = "(base_name)_p_(2#)_t_(2#)_z_(3#).tif"
+             saver.saveAsTiffStack(output_dir + "Pos" + p_num + "/" + base_name+"_"+acq_name+"_"+channels[c]+".tif");
+             }
+             */
+            mmc.setRelativePosition(bigZStage,z_step);
+            gui.sleep(50);
+        }
+        //reset position
+        mmc.setPosition(zStage,restingZ);
+        gui.sleep(50); //wait for settle
+    }
+
+    curr_time = System.currentTimeMillis();
+
+    printLog("took: " + (curr_time - start_time) + " ms");
+
+    String donetime = "time " + t + " complete at " + (new Date(curr_time)).toString();
+    printLog(donetime);
+    IJ.showStatus(donetime);
+
+    pos=plist.getPosition(0);//RESET TO FIRST POSITION
+    mmc.setPosition(bigZStage,500);//drop down to protect lens
+    mmc.setXYPosition(xyStage,pos.get(xyStage).x,pos.get(xyStage).y);
+    gui.sleep(30000);
+
+
+    if ((interval-(curr_time-start_time))>0) {
+        gui.sleep(interval-(curr_time-start_time));
+    }
+}
+
+log.close();
+gui.message("TADA!");
