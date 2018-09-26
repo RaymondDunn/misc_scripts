@@ -1,0 +1,45 @@
+import org.json.JSONObject;
+import org.json.JSONArray; 
+import java.io.PrintWriter;
+import java.net.Socket;
+
+// parameters for setting
+//var systemSaveFile = "C:\\Users\\rldun\\Desktop\\temp_mm_system_state.cfg";
+var systemSaveFilename = "C:\\Windows\\Temp\\temp_mm_system_state.cfg"
+
+// local vars
+int port = 9999;
+var serverAddress = "localhost";
+
+// Create socket to server
+Socket sock = new Socket(serverAddress, port);
+
+// construct roi object with imaging params
+JSONObject json = new JSONObject();
+
+// save system state and append file name to json object
+mmc.saveSystemState(systemSaveFile);
+json.put("systemState", systemSaveFilename);
+
+// add roi information
+var roi = new JSONArray();
+roi.put(mmc.getROI().x); 
+roi.put(mmc.getROI().y); 
+roi.put(mmc.getROI().width); 
+roi.put(mmc.getROI().height); 
+json.put("roi", roi);
+
+// add number of frames
+numFrames = mm.acquisitions().getAcquisitionSettings().numFrames;
+json.put("numFrames", numFrames)
+
+// flush/send json object to server
+PrintWriter out = new PrintWriter(sock.getOutputStream(), true);
+out.println(json.toString());
+
+// get input stream from socket
+BufferedReader input = new BufferedReader(new InputStreamReader(sock.getInputStream()));
+String answer = input.readLine();
+print(answer);
+
+sock.close()

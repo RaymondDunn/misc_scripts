@@ -1,0 +1,23 @@
+// adapted from http://www.beanshell.org/examples/httpd.html and http://cs.lmu.edu/~ray/notes/javanetexamples/
+import org.json.JSONObject;
+import java.io.PrintWriter;
+import java.net.Socket;
+
+int port = 9999;
+serverAddress = "localhost";
+
+// Create socket to server
+Socket sock = new Socket(serverAddress, port);
+
+// send data to socket's output stream
+JSONObject json = new JSONObject();
+json.put("type", "CONNECT");
+PrintWriter out = new PrintWriter(sock.getOutputStream(), true);
+out.println(json.toString());
+
+// get input stream from socket
+BufferedReader input = new BufferedReader(new InputStreamReader(sock.getInputStream()));
+String answer = input.readLine();
+print(answer);
+
+sock.close()
