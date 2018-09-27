@@ -5,7 +5,7 @@ import java.net.Socket;
 
 // parameters for setting
 //var systemSaveFile = "C:\\Users\\rldun\\Desktop\\temp_mm_system_state.cfg";
-var systemSaveFilename = "C:\\Windows\\Temp\\temp_mm_system_state.cfg"
+var systemSaveFilename = "C:\\Windows\\Temp\\temp_mm_system_state.cfg";
 
 // local vars
 int port = 9999;
@@ -18,7 +18,7 @@ Socket sock = new Socket(serverAddress, port);
 JSONObject json = new JSONObject();
 
 // save system state and append file name to json object
-mmc.saveSystemState(systemSaveFile);
+mmc.saveSystemState(systemSaveFilename);
 json.put("systemState", systemSaveFilename);
 
 // add roi information
@@ -31,7 +31,7 @@ json.put("roi", roi);
 
 // add number of frames
 numFrames = mm.acquisitions().getAcquisitionSettings().numFrames;
-json.put("numFrames", numFrames)
+json.put("numFrames", numFrames);
 
 // flush/send json object to server
 PrintWriter out = new PrintWriter(sock.getOutputStream(), true);
@@ -42,4 +42,4 @@ BufferedReader input = new BufferedReader(new InputStreamReader(sock.getInputStr
 String answer = input.readLine();
 print(answer);
 
-sock.close()
+sock.close();
