@@ -7,6 +7,11 @@ import java.net.Socket;
 //var systemSaveFile = "C:\\Users\\rldun\\Desktop\\temp_mm_system_state.cfg";
 var systemSaveFilename = "C:\\Windows\\Temp\\temp_mm_system_state.cfg";
 
+// stage params
+var numZLevels = 10
+var zStepSize = 35
+var zPositionBaseline = -250
+
 // local vars
 int port = 9999;
 var serverAddress = "localhost";

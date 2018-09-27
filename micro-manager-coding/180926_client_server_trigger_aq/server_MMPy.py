@@ -6,29 +6,83 @@ path_to_mm = 'C:\\Program Files\\Micro-Manager-2.0beta'
 sys.path.append(path_to_mm)
 import MMCorePy
 
+# do what we need to have a threaded volume
+class VolumeQuantifier(volume, timer=None):
+
+
+    def __init__(self, volume, timer=None):
+
+
+
+
+def quantify_volume(volume):
+
+    # do a calculation on each frame
+    frame_mean = []
+    for frame in volume:
+
+        # reshape view (apparently this is fastest)
+        rgb = rgb32.view(dtype=pylab.uint8).reshape(rgb32.shape[0], rgb32.shape[1], 4)[...,2::-1]   
+        
+        # do some calculation on that
+        frame_mean.append(numpy.mean(rgb))
+
 def save_image_sequence(mmc):
 
-    #
+    # 
 
-def acquire_image_sequence(mmc, um_frames):
+def acquire_image_sequence(mmc, params):
+
+    # initialize vars
+    vol = []
+    vol_quantifiers = []
+    num_z_levels = params["numZLevels"]
+    print('Using hardcoded number of z levels...')
+
+    # get number of frames
+    num_frames = params["numFrames"]
+
+    # set total number of volumes
+    volumes_grabbed = 0
+    total_vols_to_grab = num_frames / num_z_levels
 
     # start acquisition
-    mmc.startSequenceAcquisition(frames_to_grab, 0, 0)
+    mmc.startSequenceAcquisition(num_frames, 0, 0)
 
     # wait until acq, show progress along the way...
     while True:
 
-        # print on progress
-        if m
+        # create new thread image quantifier
+        # start timer
+        while mmc.getRemainingImageCount() > 0:
+            
+            # append image
+            vol.append(mmc.popNextImage())
+        
+            # check if there's enough images to constitute a volume
+            if len(vol) == num_z_levels:
 
-        # 
-        if mmc.getRemainingImageCount() == frames_to_grab:
+                # stop timer for filling image volumes
+                timer.stop()
+
+                # start timer for timing quantification
+                timer.start()
+                quant = new quantify_volume(vol, timer)
+                quant.run()
+                vol_quantifiers.append(quant)
+                # stop timer at completion of mock quantification
+
+                # clear vol
+                total_vols += 1
+                vol = []
+
+            # start timer  for filling volumes
+            #timer.start()
+
+        # break when acq is done
+        if volumes_grabed == total_vols_to_grab:
             break
 
-
-
-
-########################################
 
 def load_acquisition_params(mmc):
 
@@ -47,7 +101,7 @@ def load_acquisition_params(mmc):
     mmc.setROI(roi[0], roi[1], roi[2], roi[3])
 
 
-def control_stage(mmc):
+def control_stage(mmc, params):
 
     def sendASICommand(command):
         # sent command to serial port and wait for answer
@@ -61,9 +115,9 @@ def control_stage(mmc):
 
     # params from ASIUniZScan.bsh
     print("Starting stage control...")
-    z_position_baseline = -250.
-    z_step_size = 35
-    num_z_levels = 10
+    z_position_baseline = params["zPositionBaseline"]
+    z_step_size = params["zStepSize"]
+    num_z_levels = params["numZLevels"]
     total_z_positions = 1*num_z_levels
 
     # create z position array
@@ -114,11 +168,13 @@ def run_acquisition(params_string):
     load_acquisition_params(params)
 
     # start stage moving
-    control_stage(mmc)
+    control_stage(mmc, params)
 
     # start acq
-    num_frames = params["numFrames"]
-    acquire_image_sequence(mmc, num_frames)
+    seq = acquire_image_sequence(mmc, params)
+
+    # save
+    save_image_sequence(seq, params)
 
 
 
