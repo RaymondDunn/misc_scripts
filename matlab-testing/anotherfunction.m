@@ -1,0 +1,1 @@
+simplefunction(5)

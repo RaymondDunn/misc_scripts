@@ -1,43 +1,92 @@
 import socket
 import json
 import sys
+import time
+import numpy as np
+from tifffile import imsave
 
 path_to_mm = 'C:\\Program Files\\Micro-Manager-2.0beta'
 sys.path.append(path_to_mm)
 import MMCorePy
 
+
 # do what we need to have a threaded volume
 class VolumeQuantifier(volume, timer=None):
+    def __init__(self, volume, start_time=None):
+
+        # store params
+        self.volume = volume
+        self.start_time = start_time
+
+        # quantify volume
+        self.quantify_volume()
+
+    def quantify_volume(self):
+
+        volume = self.volume
+
+        # do a calculation on each frame
+        frame_mean = []
+        for rgb32 in volume:
+
+            # reshape view (apparently this is fastest)
+            rgb = rgb32.view(dtype=pylab.uint8).reshape(rgb32.shape[0], rgb32.shape[1], 4)[...,2::-1]   
+            
+            # do some calculation on that
+            frame_mean.append(np.mean(rgb))
+
+        # average the averages
+        self.quant = np.mean(frame_mean)
+
+        # save end time
+        self.end_time = time.time()
 
 
-    def __init__(self, volume, timer=None):
+def save_timer(timer_list, label):
+
+    # create file
+    logfile = open(label + ".log", "w") 
+
+    # write out each entry in list to file
+    for ndx, t in enumerate(timer_list):
+        logfile.write(ndx + ": " + str(t) + "\n")
+
+    # close file
+    logfile.close()
 
 
+def save_image_sequence(vol_quantifiers, params):
 
+    # quick and dirty tiff file saving
+    ndx = 0
+    for quant in vol_quantifiers:
 
-def quantify_volume(volume):
+        # grab and save every frame in quant 
+        for rgb32 in quant.volume:
 
-    # do a calculation on each frame
-    frame_mean = []
-    for frame in volume:
+            # turn rgb32 into rgb
+            print("Saving image sequence... might have to play with data types...")
+            rgb = rgb32.view(dtype=np.uint8).reshape(rgb32.shape[0], rgb32.shape[1], 4)[...,2::-1]   
 
-        # reshape view (apparently this is fastest)
-        rgb = rgb32.view(dtype=pylab.uint8).reshape(rgb32.shape[0], rgb32.shape[1], 4)[...,2::-1]   
-        
-        # do some calculation on that
-        frame_mean.append(numpy.mean(rgb))
-
-def save_image_sequence(mmc):
-
-    # 
+            # get name of file
+            filename_root = "image_"
+            filename = filename_root + str(ndx).zfill(10) + ".tif"
+            imsave(filename, rgb)
+            
 
 def acquire_image_sequence(mmc, params):
 
     # initialize vars
     vol = []
-    vol_quantifiers = []
     num_z_levels = params["numZLevels"]
-    print('Using hardcoded number of z levels...')
+    print("Using hardcoded number of z levels...")
+
+    # quantifiers
+    vol_quantifiers = []
+
+    # timers
+    quant_timers = []
+    vol_timers = []
 
     # get number of frames
     num_frames = params["numFrames"]
@@ -49,7 +98,8 @@ def acquire_image_sequence(mmc, params):
     # start acquisition
     mmc.startSequenceAcquisition(num_frames, 0, 0)
 
-    # wait until acq, show progress along the way...
+    # start timer for filling volumes
+    vol_timer_start = time.time()
     while True:
 
         # create new thread image quantifier
@@ -63,14 +113,13 @@ def acquire_image_sequence(mmc, params):
             if len(vol) == num_z_levels:
 
                 # stop timer for filling image volumes
-                timer.stop()
+                vol_timer_end = time.time()
+                vol_timers.append(vol_time_end - vol_timer_start)
 
                 # start timer for timing quantification
-                timer.start()
-                quant = new quantify_volume(vol, timer)
-                quant.run()
+                quant_timer_start = time.time()
+                quant = VolumeQuantifier(vol, quant_timer_start)
                 vol_quantifiers.append(quant)
-                # stop timer at completion of mock quantification
 
                 # clear vol
                 total_vols += 1
@@ -82,6 +131,17 @@ def acquire_image_sequence(mmc, params):
         # break when acq is done
         if volumes_grabed == total_vols_to_grab:
             break
+
+    # fill quant timers from quant object
+    for q in vol_quantifiers:
+        quant_timers.append(q.end_time - q.start_time)
+
+    # save the quantifiers
+    save_timer(vol_timers, "volume_timers")
+    save_timer(quant_timers, "quantifier_timers")
+
+    # return the list of volume quantifiers
+    return vol_quantifiers
 
 
 def load_acquisition_params(mmc):
@@ -171,11 +231,10 @@ def run_acquisition(params_string):
     control_stage(mmc, params)
 
     # start acq
-    seq = acquire_image_sequence(mmc, params)
+    vol_quantifiers = acquire_image_sequence(mmc, params)
 
     # save
-    save_image_sequence(seq, params)
-
+    save_image_sequence(vol_quantifiers, params)
 
 
 def listen():
