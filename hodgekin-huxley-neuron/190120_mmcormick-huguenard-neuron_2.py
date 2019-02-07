@@ -56,8 +56,8 @@ class INa():
         self.i_list = []
 
         # initial conditions
-        self.g_bar_Na = 1.2
-        self.ENa = 55.17
+        self.g_bar_Na = 12
+        self.ENa = 45
         self.m_array.append(self.m_inf(v))
         self.h_array.append(self.h_inf(v))
 
@@ -74,23 +74,23 @@ class INa():
         return self.Ah(v) * (1 - h) - (self.Bh(v) * h)
 
     def Am(self, v):
-        # return (0.091 * (v + 38)) / (1 - np.exp(-(v + 38) / 5)) # m and h
-        return (0.1 * (v + 35)) / (1 - np.exp((-(v + 35)) / 10)) # h and h
+        return (0.091 * (v + 38)) / (1 - np.exp(-(v + 38) / 5)) # m and h
+        #return (0.1 * (v + 35)) / (1 - np.exp((-(v + 35)) / 10)) # h and h
 
 
     def Bm(self, v):
-        #return (-0.062 * (v + 38)) / (1 - np.exp((v + 38) / 5))  # m and h
-        return 4.0 * np.exp(-0.0556 * (v + 60))  # h and h
+        return (-0.062 * (v + 38)) / (1 - np.exp((v + 38) / 5))  # m and h
+        #return 4.0 * np.exp(-0.0556 * (v + 60))  # h and h
 
 
     def Ah(self, v):
-        # return 0.016 * np.exp((-55 - v) / 15)   # m and h
-        return 0.07 * np.exp(-0.05 * (v + 60))   # h and h
+        return 0.016 * np.exp((-55 - v) / 15)   # m and h
+        #return 0.07 * np.exp(-0.05 * (v + 60))   # h and h
 
 
     def Bh(self, v):
-        #return 2.07 / ((np.exp(17 - v) / 21) + 1)    # m and h
-        return 1 / (1 + np.exp(-0.1 * (v + 30)))      # h and h
+        return 2.07 / ((np.exp(17 - v) / 21) + 1)    # m and h
+        #return 1 / (1 + np.exp(-0.1 * (v + 30)))      # h and h
 
 
     def get_current(self, v, dt):
