@@ -4,10 +4,32 @@ import matplotlib.pyplot as plt
 class IKleak():
     def __init__(self, v):
 
-        self.g_bar_leak = 0.003
-        self.Eleak = -105   # from m and h
+        self.g_bar_leak = 0.005
+        self.Eleak = -90   # from m and h
         self.i_list = []
         self.g_list = []
+
+    def get_current(self, v, dt):
+
+        # conductance
+        gleak = self.g_bar_leak
+        self.g_list.append(gleak)
+
+        # return
+        i = gleak * (v - self.Eleak) * dt
+        self.i_list.append(i)
+        return i
+
+class INaleak():
+    def __init__(self, v):
+
+        # lists
+        self.g_list = []
+        self.i_list = []
+
+        # params
+        self.g_bar_leak = 0.0014
+        self.Eleak = 45
 
     def get_current(self, v, dt):
 
@@ -30,7 +52,7 @@ class INa():
         self.g_list = []
 
         # initial conditions
-        self.g_bar_Na = 12
+        self.g_bar_Na = 0.4
         self.ENa = 45
         self.m_list.append(self.m_inf(v))
         self.h_list.append(self.h_inf(v))
@@ -90,103 +112,12 @@ class INa():
         self.i_list.append(i)
         return i 
 
-"""
-class IK2():
-    def __init__(self, v):
-
-        # gating variables
-        self.m_list = []
-        self.h_list = []
-        self.i_list = []
-        self.g_list = []
-
-        # initial conditions
-        self.v_half_m = -43
-        self.v_half_h = -58
-        self.k_m = -17
-        self.k_h = 10.6
-        self.g_bar = 1.2
-        self.EK2 = -105           
-        self.N = 4
-        self.m_list.append(self.m_inf(v))
-        self.h_list.append(self.h_inf(v))
-
-    def m_inf(self, v):
-        return (1 / (1 + np.exp((v - self.v_half_m )/ self.k_m))) ** self.N
-
-    def h_inf(self, v):
-        return (1 / (1 + np.exp((v - self.v_half_h )/ self.k_h))) ** self.N
-
-    def dm(self, v, m, dt):
-        return self.m_inf(v) - (self.m_inf(v) - m) * np.exp(-dt / self.Tm(v))
-
-    def dh(self, v, h, dt):
-        return self.h_inf(v) - (self.h_inf(v) - h) * np.exp(-dt / self.Th(v))
-    
-    def Tm(self, v):
-        return 1 / (np.exp((v - 81) / 25.6) + np.exp((v + 132) / -18)) + 9.9
-
-    def Th(self, v):
-        return 1 / (np.exp((v - 1329) / 200) + np.exp((v + 130) / -7.1)) + 120
-
-    def get_current(self, v, dt):
-
-        # get last values of m and h
-        m = self.m_list[-1]
-        h = self.h_list[-1]
-
-        # update 
-        self.m_list.append(self.dm(v, m, dt))
-        #self.m_list.append(m + self.dm(v, m, dt))
-        self.h_list.append(self.dh(v, h, dt))
-        #self.h_list.append(h + self.dh(v, h, dt))
-
-        # use new values
-        m = self.m_list[-1]
-        h = self.h_list[-1]
-
-        # conductance
-        g_hat = self.g_bar * (m**self.N) 
-        self.g_list.append(g_hat)
-
-        # current
-        i = g_hat * (v - self.EK2) * dt
-        self.i_list.append(i)
-        return i
-
-
-
-    class IK2a():
-        def __init__(self, v):
-            pass
-
-        def Tm(self, v):
-            return 1 / (np.exp((v - 81) / 25.6) + np.exp((v + 132) / -18)) + 9.9
-
-        def Th(self, v):
-            return 1 / (np.exp((v - 1329) / 200) + np.exp((v + 130) / -7.1)) + 120
-
-
-    class IK2b()
-        def __init__(self, v):
-            pass
-
-        def Tm(self, v):
-            return 1 / (np.exp((v - 81) / 25.6) + np.exp((v + 132) / -18)) + 9.9
-
-        def Th(self, v):
-            if v < -70:
-                return 8.9      # pg 1379
-            else:
-                return 1 / (np.exp((v - 81) / 25.6) + np.exp((v + 132) / -18)) + 9.9
-"""
-
 class IK():
     def __init__(self, v):
 
         # initial conditions
-        self.g_bar_K = 0.36
-        self.EK = -72.14
+        self.g_bar_K = 0.3
+        self.EK = -90
         self.i_list = []
         self.m_list = []
         self.h_list = []
@@ -233,19 +164,20 @@ class IK():
 class It():
     def __init__(self, v):
          
-         self.N = 2
-         self.v_half_m = -57
-         self.v_half_h = -81 
-         self.k_m = -6.2
-         self.k_h = 4.0
-         self.g_max = 0.33  # cm3/s
-         self.m_list = [self.m_inf(v)]
-         self.h_list = [self.h_inf(v)]
-         self.i_list = []
-         self.g_list = []
+        self.g_max = 0.003
+        self.N = 2
+        self.v_half_m = -57
+        self.v_half_h = -81 
+        self.k_m = -6.2
+        self.k_h = 4.0
+        self.m_list = [self.m_inf(v)]
+        self.h_list = [self.h_inf(v)]
+        self.i_list = []
+        self.g_list = []
+        self.q10 = 2.5
 
     def Tm(self, v):
-        return (1 / (np.exp((v + 132) / -16.7) + np.exp((v + 16.8) / 18.2))) + 0.612
+        return ((1 / (np.exp((v + 132) / -16.7) + np.exp((v + 16.8) / 18.2))) + 0.612)
 
     def Th(self, v):
         if v < -80:
@@ -265,7 +197,6 @@ class It():
     def h_inf(self, v):
         return (1 / (1 + np.exp((v - self.v_half_h )/ self.k_h))) ** self.N
 
-
     def get_current(self, v, dt):
         
         # update gating variables
@@ -281,33 +212,34 @@ class It():
         self.h_list.append(h)
 
         # calculate current
-        E = v
-        F = 96485.33289
+        E = v / 1000
+        F = 96485
         R = 8.3144598
-        T = 297.15
+        T = 35.5 + 273.15
         z = 2
-        ca_out = 3  # mM
-        ca_in = 0.001  # nm
+        ca_out = 3*10**-3  # mM
+        ca_in = 10*10**-9  # nm
         P = self.g_max
-        t1 =  (P * (z**2) * E * (F ** 2)) / (R * T)
-        t2 = np.exp(-z * F * E / (R * T))
 
         # calculate g_hat
         g_hat = (m ** self.N) * h
         self.g_list.append(g_hat)
 
         # return current
-        i = g_hat * P * t1 * ca_in - ca_out * t2 / (1 - t2) * dt
+        i = g_hat *  P * (z**2) * E * (F ** 2) / (R * T) * (ca_in - ca_out * np.exp((-z * F * E) / (R * T)) / (1 - np.exp((-z * F * E) / (R * T)))) * dt
         self.i_list.append(i)
         return i
 
 # initial settings for simulation
 dt = 0.01
-ms_to_plot = 100
+ms_to_plot = 2000
+stim_start = np.floor(ms_to_plot / 4)
+stim_end = np.floor(3*ms_to_plot / 4)
 t = np.arange(0, ms_to_plot, dt)
-I = 0.2
-initial_v = -60
-Cm = 0.29
+stim = 0.2
+initial_v = -64
+#Cm = 1*10**-6
+Cm = 0.03
 v_list = [initial_v]
 
 # initialize our channel objects
@@ -316,25 +248,34 @@ na = INa(initial_v)
 kleak = IKleak(initial_v)
 k = IK(initial_v)
 it = It(initial_v)
-#k2 = IK2(initial_v)
+naleak = INaleak(initial_v)
 
 # iterate timepoints
+channels = [na, kleak, k, naleak]
+#channels = [it, kleak, naleak]
 for i in range(0, len(t) - 1):
+
+    I = 0
+    if i*dt > stim_start and i*dt < stim_end:
+        I = stim
 
     # get last v
     v = v_list[-1]
     #dvdt = 1 / Cm * (I*dt - (leak.get_current(v, dt) + na.get_current(v, dt)))
     #dvdt = 1 / Cm * (I*dt - (kleak.get_current(v, dt) + na.get_current(v, dt) + k2.get_current(v, dt)))
-    it.get_current(v, dt)
-    dvdt = 1 / Cm * (I*dt - (kleak.get_current(v, dt) + na.get_current(v, dt) + k.get_current(v, dt)))
+    #it.get_current(v, dt)
+    Iions = 0
+    for c in channels:
+        Iions += c.get_current(v, dt)
 
+    dvdt = 1 / Cm * (I*dt - Iions)
     v_list.append(v + dvdt)
 
-# 
 plt.plot(t, v_list)
 plt.xlabel('ms')
 plt.ylabel('Vm')
 plt.show()
+
 
 # plot info for channel
 """
@@ -348,6 +289,8 @@ plt.legend(['g', 'i'])
 plt.show()
 
 
+c = na
+c = k
 c = it
 plt.plot(c.m_list)
 plt.plot(c.h_list)
@@ -358,9 +301,27 @@ plt.show()
 plt.plot(kleak.i_list)
 plt.plot(na.i_list)
 plt.plot(k.i_list)
-plt.legend(['kleak', 'na', 'k2'])
+plt.plot(it.i_list)
+plt.legend(['kleak', 'na', 'k', 'it'])
 plt.show()
 
-plt.plot()
+
+# plot as a function of voltage
+vmin = -120
+vmax = 80
+xvals = np.arange(vmin, vmax, 1)
+c_v = It(vmin)
+hinf = [c_v.h_inf(vmin)]
+minf = [c_v.m_inf(vmin)]
+for v in range(vmin, vmax-1):
+    c_v.get_current(v, dt)
+    hinf.append(c_v.h_inf(v))
+    minf.append(c_v.m_inf(v))
+plt.plot(xvals, c_v.m_list)
+plt.plot(xvals, c_v.h_list)
+plt.plot(xvals, hinf)
+plt.plot(xvals, minf)
+plt.legend(['m', 'h', 'h_inf', 'minf'])
+plt.show()
 
 """
