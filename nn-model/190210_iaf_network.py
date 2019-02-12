@@ -170,7 +170,7 @@ for t in t_vec:
     model.update_V(I)
 
 # plot
-multp = 10
+multp = 100
 arr = np.array(model.spike_list).squeeze().T
 t_bins = np.arange(0, s_to_plot, dt * multp)
 total_n = 25
