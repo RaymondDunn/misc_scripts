@@ -4,8 +4,11 @@ import matplotlib.pyplot as plt
 class IKleak():
     def __init__(self, v):
 
-        self.g_bar_leak = 0.005
-        self.Eleak = -90   # from m and h
+        self.g_bar_leak = 0.003
+        #K_i = 4 * 10 ** -3
+        #K_o = 1.5 * 10**-1
+        #Eleak =  (8.314 * 308 / 96485) * np.log(K_o/K_i)
+        self.Eleak = -90
         self.i_list = []
         self.g_list = []
 
@@ -29,6 +32,9 @@ class INaleak():
 
         # params
         self.g_bar_leak = 0.0014
+        #Na_i = 1.8 * 10**-2
+        #Na_o = 1.45 * 10**-1
+        #self.Eleak = (8.314 * 308 / 96485) * np.log(Na_o/Na_i)
         self.Eleak = 45
 
     def get_current(self, v, dt):
@@ -53,7 +59,10 @@ class INa():
 
         # initial conditions
         self.g_bar_Na = 0.4
-        self.ENa = 45
+        #Na_i = 1.8 * 10**-2
+        #Na_o = 1.45 * 10**-1
+        #self.Eleak = (8.314 * 308 / 96485) * np.log(Na_o/Na_i)
+        self.ENa = 45 
         self.m_list.append(self.m_inf(v))
         self.h_list.append(self.h_inf(v))
 
@@ -117,6 +126,9 @@ class IK():
 
         # initial conditions
         self.g_bar_K = 0.3
+        #K_i = 4 * 10 ** -3
+        #K_o = 1.5 * 10**-1
+        #Eleak =  (8.314 * 308 / 96485) * np.log(K_o/K_i)
         self.EK = -90
         self.i_list = []
         self.m_list = []
@@ -214,7 +226,7 @@ class It():
         # calculate current
         E = v / 1000
         F = 96485
-        R = 8.3144598
+        R = 8.314
         T = 35.5 + 273.15
         z = 2
         ca_out = 3*10**-3  # mM
@@ -231,15 +243,14 @@ class It():
         return i
 
 # initial settings for simulation
-dt = 0.01
-ms_to_plot = 2000
-stim_start = np.floor(ms_to_plot / 4)
-stim_end = np.floor(3*ms_to_plot / 4)
+dt = 1 * 10**-3
+ms_to_plot = 50
+stim_start = ms_to_plot / 4
+stim_end = 3*ms_to_plot / 4
 t = np.arange(0, ms_to_plot, dt)
 stim = 0.2
 initial_v = -64
-#Cm = 1*10**-6
-Cm = 0.03
+Cm = 0.003
 v_list = [initial_v]
 
 # initialize our channel objects

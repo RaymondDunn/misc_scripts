@@ -15,20 +15,23 @@ class NetworkModel():
         self.dt = dt
         self.vRe = 0
         self.vTh = 1
+        self.refractory = 5 * 10**-3
 
         # excitatory
         self.n_exc = 20
         self.tau_m_exc = 15 * 10**-3
-        self.mu_exc = 1.1
         self.tau1_syn_exc = 1 * 10**-3
         self.tau2_syn_exc = 3 * 10**-3
+        self.mu_exc = np.random.uniform(1.1, 1.2, (1, self.n_exc))
+        self.refE = np.zeros((1, self.n_exc))
 
         # inhibitory
         self.n_inh = 5
         self.tau_m_inh = 10 * 10**-3
-        self.mu_inh = 1
         self.tau1_syn_inh = 1 * 10**-3
         self.tau2_syn_inh = 2 * 10**-3
+        self.mu_inh = np.random.uniform(1, 1.05, (1, self.n_inh))
+        self.refI = np.zeros((1, self.n_inh))
 
         # connection probabilities
         self.pEE = 0.2
@@ -52,9 +55,18 @@ class NetworkModel():
         self.Jie = self.make_J(self.n_inh, self.n_exc, self.pIE, self.jIE)
         self.Jii = self.make_J(self.n_inh, self.n_inh, self.pII, self.jII)
 
-        # make voltage vectors
+        # make voltage/spike vectors
+        self.spike_e = np.zeros((1, self.n_exc))
+        self.spike_i = np.zeros((1, self.n_inh))
         self.vE = np.zeros((1, self.n_exc))
         self.vI = np.zeros((1, self.n_inh))
+
+        # lists for saving time data
+        self.vI_list = []
+        self.vE_list = []
+        self.syn_e_list = []
+        self.syn_i_list = []
+        self.spike_list = []
 
     # neuron filter matrices
     def make_F(self, t, tau1, tau2, n):
@@ -77,35 +89,119 @@ class NetworkModel():
         return mat * rand_matrix
 
     # update voltage matrix, add bias, return spike vector
-    def update_V(self, V, spike, F, J, vRe, vTh, mu):
+    def update_V(self, Iinput):
+
+        # update refractory
+        self.refE = self.refE - self.dt
+        self.refI = self.refI - self.dt
+
+        # fix ref negative
+        self.refE[self.refE < 0] = 0
+        self.refI[self.refI < 0] = 0
 
         # get total amount of synaptic input from exc and inh
-        syn = self.get_syn_input()
+        syn_ee = self.get_syn_input(self.Fe, self.Jee, self.spike_e, self.dt)
+        syn_ie = self.get_syn_input(self.Fe, self.Jie, self.spike_e, self.dt)
+        syn_ei = self.get_syn_input(self.Fi, self.Jei, self.spike_i, self.dt)
+        syn_ii = self.get_syn_input(self.Fi, self.Jii, self.spike_i, self.dt)
+        syn_e = np.sum(np.concatenate((syn_ee, syn_ei), axis=1), axis=1)
+        syn_i = np.sum(np.concatenate((syn_ii, syn_ie), axis=1), axis=1)
 
         # update V with synaptic input and Iinput
-        V = 1/tau * (mu - V) + syn + Iinput
+        self.vE = 1/self.tau_m_exc * (self.mu_exc - self.vE) + syn_e + Iinput
+        self.vI = 1/self.tau_m_inh * (self.mu_inh - self.vI) + syn_i
+        self.vE_list.append(self.vE)
+        self.vI_list.append(self.vI)
+
+        # undo V updates if neuron is refractory
+        self.vE[self.refE > 0] = 0
+        self.vI[self.refI > 0] = 0
 
         # update spike
-        spike = V > vTh
+        self.spike_e = self.vE >= self.vTh
+        self.spike_i = self.vI >= self.vTh
 
-        # reset voltages over threshold
-        V[V >= vTh] = vRe
+        # set refractory on spike
+        self.refE[self.spike_e] = self.refractory
+        self.refI[self.spike_i] = self.refractory
 
-        # refractory? some internal state structure?
+        # reset voltages
+        self.vE[self.spike_e] = self.vRe
+        self.vI[self.spike_i] = self.vRe
 
+        # append to internal data structs
+        self.syn_e_list.append(syn_e)
+        self.syn_i_list.append(syn_i)
+        self.spike_list.append(np.concatenate((self.spike_e, self.spike_i), axis=1))
 
+    def get_syn_input(self, F, J, spike, dt):
 
-    def get_syn_input():
+        # get weight matrix times filter
+        coef = F * J
 
-        pass
+        # cross with spiking
+        coef = coef * spike
 
+        return coef
 
+# for repeatability
+np.random.seed(123)
 
 # simulation
 dt = 0.1 * 10**-3
-stim = 0.07         # increased mu during "stim" 
-s_to_plot = 10
+#stim = 0.07         # increased "stim" 
+stim = 0.07 * np.ones((1, 20)) * (np.random.rand(20) > 0.5)
+s_to_plot = 1
 t_vec = np.arange(0, s_to_plot, dt)
-np.random.seed(123)
+stim_start = s_to_plot / 4
+stim_end = 3*s_to_plot / 4
 
+# create model
 model = NetworkModel(dt)
+
+for t in t_vec:
+
+    # set stimulation
+    I = 0
+    if t > stim_start and t < stim_end:
+        I = stim
+
+    # update model
+    model.update_V(I)
+
+# plot
+multp = 100
+arr = np.array(model.spike_list).squeeze().T
+t_bins = np.arange(0, s_to_plot, dt * multp)
+total_n = 25
+
+# prep output image
+total_t = int(s_to_plot / dt / multp)
+arr_img = np.zeros((total_n, total_t))
+for n in range(0, total_n):
+
+    # get spike indices
+    st = np.where(arr[n])[0] * dt 
+
+    # digitize and set
+    dig = np.digitize(st, t_bins) - 1
+    arr_img[n, dig] = 1
+
+plt.imshow(arr_img)
+plt.show()
+
+
+# other analyses
+a = np.array(model.vE_list).squeeze().T
+
+"""
+multp_factor = 100
+arr_img = np.zeros((int(total_n*multp_factor), total_t))
+for n in range(0, total_n):
+
+    np.histogram()
+
+    for t in range(0, total_t):
+        arr_img[int(n*multp_factor):int(n+1*multp_factor), t] = arr[n,t]
+
+"""
