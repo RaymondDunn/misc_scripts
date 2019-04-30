@@ -16,7 +16,6 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
         case 'exp'
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             % the exponential and its derivatives and inverse
-            'your code goes here';
             f = @exp;
             df = @exp;
             d2f = @exp;
@@ -43,6 +42,10 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
     end
     
     % lines for local testing
+    f = @exp;
+    df = @exp;
+    d2f = @exp;
+    invf = @log;
     Spikes = Spikes_train;
     X = X_train;
     
@@ -71,36 +74,36 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
     
     % Initialize L at -inf
     L=-inf*ones(1,1000);
+    %L=0*ones(1,1000);
     
     % Nonzero spike times (you'll want this!)
     nz=Spikes>0;
     total_t = 200000;
     
     % Loop until Newton-Raphson converges
-    j=1;
+    loop=1;
     k_old=k;
     while true
-        j=j+1;
+        loop=loop+1;
         
         % Trick to deal with bad Newton steps
         k=2*k-k_old; % initialize k such that when we take the mean in 2 lines it's the correct value
-        while ~isfinite(L(j))
+        while ~isfinite(L(loop))
             k=.5*(k+k_old); % move k back toward k_old
     
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             % Calculate log-likelihood (you can ignore the constant terms here if you want)
             ll = 0;
             for t = 1:total_t
-                lambda_t = f(dot(k, X(:,t)) + b);
+                lambda_t = f(dot(k, X(:,t))); % don't add b because it's already concatenated within k
                 yt = Spikes(t);
-                d_spikes = dt * lambda_t;
-                ll = ll + log((d_spikes^yt * exp(-d_spikes))/factorial(yt));
-                if mod(t, 20000) == 0
-                    disp(t)
-                end
+                %ll = ll + (yt * log(dt) + yt*log(lambda_t) - dt * lambda_t - log(factorial(yt)));
+                ll = ll + (yt * log(lambda_t * dt) - dt * lambda_t - log(factorial(yt)));
             end
-            L(j) = ll;
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            L(loop) = ll;
+
+            %L(loop) = Spiking_LL(X, k, Spikes, f);
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         end
         
         % Plot k
@@ -108,10 +111,10 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
         drawnow;
 
         % Calculate the size of the error
-        delta=abs((L(j)-L(j-1))/L(j));
+        delta=abs((L(loop)-L(loop-1))/L(loop));
         
         % Print iteration information
-        fprintf('iter: %d, LL: %g, delta: %g\n',j-1,L(j),delta);
+        fprintf('iter: %d, LL: %g, delta: %g\n',loop-1,L(loop),delta);
         
         % Convergence criteria
         if delta < tol
@@ -120,32 +123,63 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % Calculate gradient
-        'your code goes here';
-        % g=
+        disp('Calculating gradient')
+        grad = zeros(50, 1); % gradient is vector of partials
+        for j=1:size(grad)
+            kj = 0;
+            for t=1:total_t
+                yt = Spikes(t);
+                ui = dot(k, X(:, t));
+                kj = kj + (yt * df(ui) / f(ui) - dt * df(ui)) * X(j, t);
+            end
+
+            % display update
+            grad(j) = kj;
+            if mod(j, 10) == 0
+                disp(j);
+            end
+        end
+        g = grad;
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % Calculate Hessian
-        'your code goes here';
-        % H=
+        % yeesh loop city this hurts to look at
+        % hessian is symmetric so all we need to do is fill in half
+        disp('Calculating Hessian')
+        hess = zeros(50);
+        for j=1:size(hess)
+            for i = j:size(hess)
+                kij = 0;
+                for t = 1:total_t
+                    ui = dot(k, X(:, t));
+                    kij = kij + ((((yt * d2f(ui) * f(ui)) - df(ui)^2) / f(ui)^2 - dt * d2f(ui)) * X(j, t) * X(i, t));
+                end
+            end
+            hess(j, i) = kij;
+            
+            % display update to user
+            if mod(j, 5) == 0
+                disp(j);
+            end
+        end
+        H = hess;
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % Newton-Raphson
         k_old=k;
-        'your code goes here';
-        % k=
+        k = k_old - (H * g);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Deal the outputs
-    L=L(1:j);
-    'your code goes here';
-    % b=
-    % k=
+    %L=L(1:j);
+    %b = k(50);
+    %k = k(1:49);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     % Close the figure
-    close(fig);
+    %close(fig);
 end
