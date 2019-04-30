@@ -149,14 +149,14 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
         disp('Calculating Hessian')
         hess = zeros(50);
         for j=1:size(hess)
-            for i = j:size(hess)
+            for m = j:size(hess)
                 kij = 0;
                 for t = 1:total_t
                     ui = dot(k, X(:, t));
-                    kij = kij + ((((yt * d2f(ui) * f(ui)) - df(ui)^2) / f(ui)^2 - dt * d2f(ui)) * X(j, t) * X(i, t));
+                    kij = kij + ((((yt * d2f(ui) * f(ui)) - df(ui)^2) / f(ui)^2 - dt * d2f(ui)) * X(j, t) * X(m, t));
                 end
             end
-            hess(j, i) = kij;
+            hess(j, m) = kij;
             
             % display update to user
             if mod(j, 5) == 0
