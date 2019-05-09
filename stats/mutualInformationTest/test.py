@@ -2,13 +2,52 @@ import random
 from sklearn import metrics
 import numpy as np
 import os
+import pdb
+from numba import jit
 
 #############################
-bins = 2 ## MI bin number
+# bins = 2 ## MI bin number
 SEED = 1 ## seed for random
 
 #############################
 
+
+# calc MI p values
+def calc_MI_pvalue(xs, bins):
+
+    # get mutual information of dataset
+    mi_mat = calc_MI_matrix(xs, bins)
+
+    # shuffle samples and calculate mutual information
+    iterations = 10000
+    shuffled_mi_mats = np.zeros((len(xs), len(xs), iterations))
+    for i in range(iterations):
+        
+        # shuffle each vector
+        xs_shuffled = []
+        for x in xs:
+
+            # shuffle temp var
+            y = x.copy()
+            random.shuffle(y)
+            xs_shuffled.append(y)
+
+        # calculate mi mat of shuffled
+        mi_mat_shuffled = calc_MI_matrix(xs_shuffled, bins)
+        shuffled_mi_mats[:,:,i] = mi_mat_shuffled
+
+        # update user on progress
+        if  i % 1000 == 0:
+            print('Iteration {}...'.format(i))
+
+    # calculate two-sided p value as proportion of values big enough away from sample
+    p_mat = np.zeros(mi_mat.shape)
+    for i in range(iterations):
+        larger_arr = np.abs(mi_mat) > np.abs(shuffled_mi_mats[:,:,i])
+        p_mat += larger_arr.astype(int)
+    
+    # return
+    return p_mat / iterations
 
 # calculate MI matrix
 def calc_MI_matrix(xs, bins):
@@ -33,20 +72,21 @@ def calc_MI(x, y, bins):
 def getDataLists(p1_file='p1.txt', p2_file='p2.txt'):
 
     # local file names
-    p1_file = "p1.txt"
-    p2_file = "p2.txt"
+    p_file_list = ["p1.txt", "p2.txt", "p3.txt", "p4.txt"]
     cwd = os.getcwd()
 
     # local path
-    p1_path = os.path.join(cwd, p1_file)
-    p2_path = os.path.join(cwd, p2_file)
+    p_path = []
+    for p in p_file_list:
+        p_path.append(os.path.join(cwd, p))
 
     # open files
-    f1 = open(p1_path, 'r')
-    f2 = open(p2_path, 'r')
+    filelist = []
+    for pp in p_path:
+        f = open(pp, 'r')
+        filelist.append(f)
 
     # save in list
-    filelist = [f1, f2]
     datalist = []
 
     # iterate files
@@ -76,25 +116,14 @@ datalist = getDataLists()
 # local vars
 xs = []
 for x in datalist:
-    xs.append(x)
+    xs.append(list(x))
 
-# get mutual information of dataset
-mi_mat = calc_MI_matrix(xs, bins)
+# iterate through bin sizes to how p-values depend on bin sizes
+bins_sizes = range(2, 20, 2)
+p_flat = []
+for bins in bins_sizes:
 
-calc_MI_pvalue(xs, bins)
-# shuffle samples and calculate mutual information
-iterations = 10000
-xs_shuffled = []
-shuffled_mi_mats = np.zeros((len(xs), len(xs), iterations))
-for i in range(iterations):
-    
-    # shuffle each vector
-    for x in datalist:
-        xs_shuffled.append(random.shuffle(x[i]))
+    # get pvalues from random shuffling
+    p_mat = calc_MI_pvalue(xs, bins)
+    p_flat.append(p_mat.flatten())
 
-    # calculate mi mat of shuffled
-    mi_mat_shuffled = calc_MI_matrix(xs_shuffled, bins)
-    shuffled_mi_mats[:,:,i] = mi_mat_shuffled
-
-# calculate two-sided p value as proportion of values big enough away from sample
-p_mat = np.sum(np.abs(mi_mat) > np.abs(shuffled_mi_mats), axis=2) / iterations
