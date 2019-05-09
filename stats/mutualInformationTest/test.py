@@ -72,7 +72,7 @@ def calc_MI(x, y, bins):
 def getDataLists(p1_file='p1.txt', p2_file='p2.txt'):
 
     # local file names
-    p_file_list = ["p1.txt", "p2.txt", "p3.txt", "p4.txt"]
+    p_file_list = ["p1.txt", "p2.txt"]
     cwd = os.getcwd()
 
     # local path
@@ -124,6 +124,9 @@ p_flat = []
 for bins in bins_sizes:
 
     # get pvalues from random shuffling
+    print('Bin size: {}'.format(bins))
     p_mat = calc_MI_pvalue(xs, bins)
     p_flat.append(p_mat.flatten())
 
+# restructure into matrix
+mean_p = np.array(p_flat).mean(axis=0).reshape((len(xs),len(xs)))
