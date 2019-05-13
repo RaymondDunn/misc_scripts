@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+
+
+<html>
+    <head>
+
+      <% include ./views/partials/head %>
+
+    </head>
+<body>
+    <h1>Hello Python!</h1>
+
+    <form action="/submit-params" method="get" id="params-form">
+
+      <button class="myform" id="submit-params-button" onclick="submitParams">Submit params</button>
+    </form>
+
+</body>
+
+<script>
+
+  function submitFirstButton(){
+    document.getElementById("submit-params-button").submit()
+
+  }
+
+</script>
+
+</html>
