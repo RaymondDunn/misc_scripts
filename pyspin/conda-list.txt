@@ -1,0 +1,35 @@
+# packages in environment at C:\Users\FOCO\Anaconda3\envs\pyspin:
+#
+# Name                    Version                   Build  Channel
+backcall                  0.1.0                    py37_0  
+ca-certificates           2019.5.15                     0  
+certifi                   2019.3.9                 py37_0  
+colorama                  0.4.1                    py37_0  
+cycler                    0.10.0                    <pip>
+decorator                 4.4.0                    py37_1  
+ipython                   7.5.0            py37h39e3cac_0  
+ipython_genutils          0.2.0                    py37_0  
+jedi                      0.13.3                   py37_0  
+kiwisolver                1.1.0                     <pip>
+matplotlib                3.1.0                     <pip>
+numpy                     1.16.4                    <pip>
+opencv-python             4.1.0.25                  <pip>
+openssl                   1.1.1c               he774522_1  
+parso                     0.4.0                      py_0  
+pickleshare               0.7.5                    py37_0  
+pip                       19.1.1                   py37_0  
+prompt_toolkit            2.0.9                    py37_0  
+pygments                  2.4.2                      py_0  
+pyparsing                 2.4.0                     <pip>
+python                    3.7.3                h8c8aaf0_1  
+python-dateutil           2.8.0                     <pip>
+setuptools                41.0.1                   py37_0  
+six                       1.12.0                   py37_0  
+spinnaker-python          1.23.0.27                 <pip>
+sqlite                    3.28.0               he774522_0  
+traitlets                 4.3.2                    py37_0  
+vc                        14.1                 h0510ff6_4  
+vs2015_runtime            14.15.26706          h3a45250_4  
+wcwidth                   0.1.7                    py37_0  
+wheel                     0.33.4                   py37_0  
+wincertstore              0.2                      py37_0  
