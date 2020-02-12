@@ -1,7 +1,7 @@
 # Loosely adapted from http://www.math.mcgill.ca/gantumur/docs/reps/RyanSicilianoHH.pdf
 # Which is way simpler than going straight from the HH 1952d paper man I wasted
 # a lot of time on that.
-# Wait the constants were on page 520 the whole time...
+# Wait the constants were on page 520 of HH1952d the whole time... dammit ok
 
 import numpy as np
 import pylab
