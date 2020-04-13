@@ -28,7 +28,6 @@ def main():
     acq_group.add_argument('-r', '--recursive', choices=['yes', 'no'], help='Recurse into subfolders')
     acq_group.add_argument("-w", "--writelog", default="writelogs", help="Dump output to local file")
 
-
     search_group = parser.add_argument_group(
     "Search Options", 
     "Customize the search options"
