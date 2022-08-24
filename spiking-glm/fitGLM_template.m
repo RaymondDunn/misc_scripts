@@ -109,7 +109,9 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
         % Plot k
         set(img,'CData',reshape(k(1:end-1),7,7));
         drawnow;
-
+        fname = ['C:/Users/rldun/Desktop/fig/fig_', int2str(loop), '.png'];
+        saveas(img, fname, 'png');
+        
         % Calculate the size of the error
         delta=abs((L(loop)-L(loop-1))/L(loop));
         
@@ -118,7 +120,8 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
         
         % Convergence criteria
         if delta < tol
-            break;
+            %break;
+            disp('Delta is less than tol')
         end
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -155,12 +158,19 @@ function [L,k,b]=fitGLM_template(Spikes,X,fname)
                     ui = dot(k, X(:, t));
                     kij = kij + ((((yt * d2f(ui) * f(ui)) - df(ui)^2) / f(ui)^2 - dt * d2f(ui)) * X(j, t) * X(m, t));
                 end
+                hess(j, m) = kij;
             end
-            hess(j, m) = kij;
             
             % display update to user
             if mod(j, 5) == 0
                 disp(j);
+            end
+        end
+        
+        % fill out hess
+        for i=1:size(hess)
+            for j=1:size(hess)
+                hess(j, i) = hess(i, j);
             end
         end
         H = hess;

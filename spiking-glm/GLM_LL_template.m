@@ -52,7 +52,6 @@ function L=GLM_LL_template(Spikes,X,k,b,fname)
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Calculate log-likelihood and include the constant terms: log(p(y))=y*log(f(k*x+invf(b))*dt)-f(k*x+invf(b))*dt-log(y!)
-    'your code goes here';
-    % L=
+    L = y*log(f(k*x+invf(b))*dt)-f(k*x+invf(b))*dt-log(factorial(y));
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end

@@ -3,11 +3,11 @@ from sklearn import metrics
 import numpy as np
 import os
 import pdb
-from numba import jit
+import matplotlib.pyplot as plt
 
 #############################
 # bins = 2 ## MI bin number
-SEED = 1 ## seed for random
+SEED = 1 	# seed for random
 
 #############################
 
@@ -22,7 +22,7 @@ def calc_MI_pvalue(xs, bins):
     iterations = 10000
     shuffled_mi_mats = np.zeros((len(xs), len(xs), iterations))
     for i in range(iterations):
-        
+
         # shuffle each vector
         xs_shuffled = []
         for x in xs:
@@ -34,7 +34,7 @@ def calc_MI_pvalue(xs, bins):
 
         # calculate mi mat of shuffled
         mi_mat_shuffled = calc_MI_matrix(xs_shuffled, bins)
-        shuffled_mi_mats[:,:,i] = mi_mat_shuffled
+        shuffled_mi_mats[:, :, i] = mi_mat_shuffled
 
         # update user on progress
         if  i % 1000 == 0:
@@ -43,11 +43,12 @@ def calc_MI_pvalue(xs, bins):
     # calculate two-sided p value as proportion of values big enough away from sample
     p_mat = np.zeros(mi_mat.shape)
     for i in range(iterations):
-        larger_arr = np.abs(mi_mat) > np.abs(shuffled_mi_mats[:,:,i])
+        larger_arr = np.abs(mi_mat) > np.abs(shuffled_mi_mats[:, :, i])
         p_mat += larger_arr.astype(int)
     
     # return
     return p_mat / iterations
+
 
 # calculate MI matrix
 def calc_MI_matrix(xs, bins):
@@ -60,9 +61,9 @@ def calc_MI_matrix(xs, bins):
 
     return score_matrix
 
+
 def calc_MI(x, y, bins):
-    
-    # calcuate the mutual info of a single segment to the 
+    # calcuate the mutual info of a single segment to the
     # John Webb 2018
     c_xy = np.histogram2d(x, y, bins)[0]
     mi = metrics.mutual_info_score(None, None, contingency=c_xy)
@@ -95,7 +96,7 @@ def getDataLists(p1_file='p1.txt', p2_file='p2.txt'):
         # holder for file data
         flist = []
         fcontent = f.readlines()
-        
+
         for line in fcontent:
 
             # append formatted list
@@ -106,6 +107,7 @@ def getDataLists(p1_file='p1.txt', p2_file='p2.txt'):
 
     # return
     return datalist
+
 
 # seed rng
 random.seed(SEED)
@@ -129,4 +131,22 @@ for bins in bins_sizes:
     p_flat.append(p_mat.flatten())
 
 # restructure into matrix
-mean_p = np.array(p_flat).mean(axis=0).reshape((len(xs),len(xs)))
+mean_p = np.array(p_flat).mean(axis=0).reshape((len(xs), len(xs)))
+
+# plot p value as a function of p value
+plt.figure()
+plt.plot(list(bins_sizes), p_flat)
+plt.xlabel('Bin size')
+plt.ylabel('p-value')
+plt.show()
+
+# plot pairwise plots
+# delta = np.array(xs[0]) - np.array(xs[1])
+# plt.hist(delta)
+# plt.show
+
+# plot 
+plt.figure()
+xs_arr = np.array(xs)
+plt.plot(xs_arr)
+plt.show()
